@@ -1,0 +1,16 @@
+<resources>
+    <style name="Theme.NacMac" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/color_primary</item>
+        <item name="colorSecondary">@color/color_secondary</item>
+        <item name="android:statusBarColor">@color/bg_screen</item>
+        <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
+    </style>
+
+    <style name="Theme.NacMac.Fullscreen" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/color_primary</item>
+        <item name="colorSecondary">@color/color_secondary</item>
+        <item name="android:statusBarColor">#00000000</item>
+        <item name="android:navigationBarColor">#0F172A</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

@@ -1,0 +1,121 @@
+# ==============================================================================
+# NacMac Comprehensive .gitignore
+# Covers: Secrets, Credentials, Android, macOS, Xcode, SwiftPM, IDEs, and OS junk
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. SECRETS, CREDENTIALS & SENSITIVE KEYS
+# ------------------------------------------------------------------------------
+# Private keys, certificates, keystores & tokens
+*.keystore
+*.jks
+*.p12
+*.p8
+*.key
+*.pem
+*.cer
+*.crt
+*.der
+*.pkcs12
+*.mobileprovision
+
+# Secret configuration & credential files
+.env
+.env.*
+*.env
+local.properties
+google-services.json
+GoogleService-Info.plist
+credentials.json
+client_secret*.json
+secrets.json
+secret_*.json
+*.secret
+.netrc
+
+# NacMac runtime paired credentials & session stores
+paired_device.json
+*.paired.json
+.nacmac/
+icon_cache/
+
+# ------------------------------------------------------------------------------
+# 2. BINARY RELEASES & GENERATED BUNDLES
+# ------------------------------------------------------------------------------
+*.apk
+*.aab
+*.dmg
+*.pkg
+*.ipa
+*.app/
+*.dSYM/
+
+# ------------------------------------------------------------------------------
+# 3. ANDROID & GRADLE BUILD ARTIFACTS
+# ------------------------------------------------------------------------------
+.gradle/
+build/
+*/build/
+app/build/
+.kotlin/
+captures/
+.cxx/
+*.class
+
+# ------------------------------------------------------------------------------
+# 4. MACOS, SWIFT & XCODE BUILD ARTIFACTS
+# ------------------------------------------------------------------------------
+.build/
+*/.build/
+Packages/
+xcuserdata/
+DerivedData/
+*.xcworkspace/
+!*.xcodeproj/project.xcworkspace
+*.moved-aside
+*.hmap
+*.ipa
+*.xcuserstate
+.swiftpm/
+Package.resolved
+
+# ------------------------------------------------------------------------------
+# 5. IDEs & EDITORS
+# ------------------------------------------------------------------------------
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.sublime-project
+*.sublime-workspace
+
+# ------------------------------------------------------------------------------
+# 6. OPERATING SYSTEM ARTIFACTS
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
+
+# ------------------------------------------------------------------------------
+# 7. PYTHON & TESTING CACHES
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# ------------------------------------------------------------------------------
+# 8. TEMPORARY & SCRATCH FILES
+# ------------------------------------------------------------------------------
+tmp/
+/tmp/
+scratch/

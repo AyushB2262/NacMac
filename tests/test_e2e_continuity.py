@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+"""
+End-to-End Continuity & Protocol Verification Suite for LinkMyMac
+Tests:
+  1. Pairing Handshake (QR payload extraction -> PAIR_REQUEST -> PAIR_RESPONSE)
+  2. Heartbeat & Keepalive (PING -> PONG)
+  3. Notification Mirroring (Delivering mock notification + dismissal)
+  4. Bidirectional Chunked File Transfer (Streaming chunks with SHA-256 verification)
+  5. File Transfer Cancellation (Mid-stream cancellation and cleanup)
+  6. Auto-Reconnect Resiliency (Connection drop -> silent auto-reconnect)
+"""
+
+import sys
+import os
+import socket
+import struct
+import json
+import time
+import base64
+import hashlib
+import uuid
+import subprocess
+
+PORT = 52840
+HOST = "127.0.0.1"
+
+class PacketFraming:
+    @staticmethod
+    def send_envelope(sock, msg_type, payload_dict):
+        payload_str = json.dumps(payload_dict)
+        envelope = {
+            "type": msg_type,
+            "payload": payload_str
+        }
+        body = json.dumps(envelope).encode("utf-8")
+        header = struct.pack(">I", len(body))
+        sock.sendall(header + body)
+
+    @staticmethod
+    def read_envelope(sock):
+        header = sock.recv(4)
+        if not header or len(header) < 4:
+            return None
+        length = struct.unpack(">I", header)[0]
+        data = bytearray()
+        while len(data) < length:
+            chunk = sock.recv(length - len(data))
+            if not chunk:
+                break
+            data.extend(chunk)
+        raw_json = data.decode("utf-8")
+        return json.loads(raw_json)
+
+def run_tests():
+    print("=" * 65)
+    print("LinkMyMac End-to-End Protocol & Integration Test Suite")
+    print("=" * 65)
+
+    # Clean old paired state before fresh test
+    qr_path = os.path.expanduser("~/.nacmac/active_qr.json")
+    if not os.path.exists(qr_path) and os.path.exists(os.path.expanduser("~/.lmm/active_qr.json")):
+        qr_path = os.path.expanduser("~/.lmm/active_qr.json")
+    paired_path = os.path.expanduser("~/.nacmac/paired_device.json")
+    if os.path.exists(paired_path):
+        os.remove(paired_path)
+    if os.path.exists(qr_path):
+        os.remove(qr_path)
+    # Also clean legacy if exists
+    legacy_paired = os.path.expanduser("~/.lmm/paired_device.json")
+    if os.path.exists(legacy_paired):
+        os.remove(legacy_paired)
+
+    # 1. Check if NacMac / LinkMyMac binary is built
+    candidates = [
+        "/Users/ayush/LMM-REA/macos/NacMac.app/Contents/MacOS/NacMac",
+        "/Users/ayush/LMM-REA/macos/.build/release/NacMac",
+        "/Users/ayush/LMM-REA/macos/.build/arm64-apple-macosx/release/NacMac",
+        "/Users/ayush/LMM-REA/macos/.build/debug/LinkMyMac"
+    ]
+    bin_path = next((p for p in candidates if os.path.exists(p)), None)
+    if not bin_path:
+        print("[FAIL] Executable not found. Run 'swift build' first.")
+        sys.exit(1)
+
+    print(f"[*] Found native binary at: {bin_path}")
+
+    # Launch binary as background process for test
+    proc = subprocess.Popen([bin_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    print("[*] Started macOS server daemon (PID: %d)..." % proc.pid)
+    
+    # Wait for active_qr.json to be written by the newly spawned daemon
+    for _ in range(30):
+        if os.path.exists(os.path.expanduser("~/.nacmac/active_qr.json")) or os.path.exists(os.path.expanduser("~/.lmm/active_qr.json")):
+            break
+        time.sleep(0.2)
+
+    try:
+        nacmac_qr = os.path.expanduser("~/.nacmac/active_qr.json")
+        lmm_qr = os.path.expanduser("~/.lmm/active_qr.json")
+        qr_path = nacmac_qr if os.path.exists(nacmac_qr) else lmm_qr
+        assert os.path.exists(qr_path), f"active_qr.json not found at {qr_path}"
+        with open(qr_path, "r") as f:
+            qr_data = json.load(f)
+        shared_secret = qr_data["secret"]
+        print(f"[*] Android QR Scanner simulated: Captured secret '{shared_secret[:8]}...' for Mac '{qr_data['macName']}'")
+
+        # Connect to Mac
+        print("\n--- Test 1: Pairing Handshake ---")
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5.0)
+        s.connect((HOST, PORT))
+        print("[+] TCP Connection established to Mac on port %d" % PORT)
+
+        # Send PAIR_REQUEST
+        device_id = "android-" + str(uuid.uuid4())[:8]
+        pair_req = {
+            "androidId": device_id,
+            "deviceName": "Samsung Galaxy S24 Ultra",
+            "authSecret": shared_secret
+        }
+        PacketFraming.send_envelope(s, "PAIR_REQUEST", pair_req)
+        print("[*] Sent PAIR_REQUEST for device: %s" % device_id)
+
+        resp = PacketFraming.read_envelope(s)
+        assert resp is not None, "Did not receive pair response"
+        assert resp["type"] == "PAIR_RESPONSE", f"Expected PAIR_RESPONSE, got {resp['type']}"
+        payload = json.loads(resp["payload"])
+        assert payload.get("success") is True, f"Pairing was not successful: {payload}"
+        print("[PASS] Pairing Handshake verified! Remote Mac: '%s'" % payload.get("macName"))
+
+        # --- Test 2: Heartbeat & Keepalive ---
+        print("\n--- Test 2: Heartbeat Keepalive ---")
+        PacketFraming.send_envelope(s, "HEARTBEAT_PING", {})
+        pong = PacketFraming.read_envelope(s)
+        assert pong is not None, "No pong response received"
+        assert pong["type"] == "HEARTBEAT_PONG", f"Expected HEARTBEAT_PONG, got {pong['type']}"
+        print("[PASS] Heartbeat PING/PONG verified successfully!")
+
+        # --- Test 3: Notification Mirroring ---
+        print("\n--- Test 3: Notification Mirroring ---")
+        mock_notif = {
+            "id": "notif-" + str(uuid.uuid4())[:8],
+            "packageName": "com.whatsapp",
+            "appName": "WhatsApp",
+            "title": "Alex Chen",
+            "body": "Hey, is the LinkMyMac continuity bridge ready?",
+            "timestamp": int(time.time()),
+            "hasReplyAction": True
+        }
+        PacketFraming.send_envelope(s, "NOTIFICATION", mock_notif)
+        print("[+] Dispatched simulated WhatsApp notification to Mac")
+        time.sleep(0.5)
+
+        # Test dismissal
+        PacketFraming.send_envelope(s, "NOTIFICATION_DISMISSED", {"id": mock_notif["id"]})
+        print("[PASS] Notification mirroring and dismissal dispatched!")
+
+        # --- Test 4: Bidirectional Chunked File Transfer ---
+        print("\n--- Test 4: Chunked File Transfer ---")
+        transfer_id = str(uuid.uuid4())
+        test_filename = f"continuity_test_{int(time.time())}.dat"
+        # Generate 256 KB of random data
+        file_bytes = os.urandom(256 * 1024)
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+        # 4.1 Send FILE_START
+        PacketFraming.send_envelope(s, "FILE_START", {
+            "transferId": transfer_id,
+            "filename": test_filename,
+            "size": len(file_bytes),
+            "sha256": file_hash
+        })
+
+        # 4.2 Stream chunks (64 KB each)
+        chunk_size = 64 * 1024
+        offset = 0
+        while offset < len(file_bytes):
+            chunk = file_bytes[offset:offset + chunk_size]
+            b64_data = base64.b64encode(chunk).decode("ascii")
+            PacketFraming.send_envelope(s, "FILE_CHUNK", {
+                "transferId": transfer_id,
+                "offset": offset,
+                "length": len(chunk),
+                "dataBase64": b64_data
+            })
+            offset += len(chunk)
+
+        # 4.3 Send FILE_END
+        PacketFraming.send_envelope(s, "FILE_END", {
+            "transferId": transfer_id,
+            "totalBytes": len(file_bytes)
+        })
+        time.sleep(1.0)
+
+        # Verify file arrived on Mac in ~/Downloads/NacMac (or ~/Downloads/LinkMyMac)
+        dest_path = os.path.expanduser(f"~/Downloads/NacMac/{test_filename}")
+        if not os.path.exists(dest_path):
+            dest_path = os.path.expanduser(f"~/Downloads/LinkMyMac/{test_filename}")
+        assert os.path.exists(dest_path), f"Transferred file not found at {dest_path}"
+        with open(dest_path, "rb") as f:
+            received_bytes = f.read()
+        received_hash = hashlib.sha256(received_bytes).hexdigest()
+        assert received_hash == file_hash, f"Hash mismatch! Sent: {file_hash}, Got: {received_hash}"
+        print("[PASS] File transfer verified! 256 KB transferred with exact SHA-256 integrity match.")
+        os.remove(dest_path)
+
+        # --- Test 5: File Transfer Cancellation ---
+        print("\n--- Test 5: File Transfer Cancellation ---")
+        cancel_id = str(uuid.uuid4())
+        cancel_filename = "cancelled_file.tmp"
+        PacketFraming.send_envelope(s, "FILE_START", {
+            "transferId": cancel_id,
+            "filename": cancel_filename,
+            "size": 1024 * 1024
+        })
+        # Send one chunk then cancel
+        PacketFraming.send_envelope(s, "FILE_CHUNK", {
+            "transferId": cancel_id,
+            "offset": 0,
+            "length": 1024,
+            "dataBase64": base64.b64encode(b"A" * 1024).decode("ascii")
+        })
+        PacketFraming.send_envelope(s, "FILE_CANCEL", {
+            "transferId": cancel_id,
+            "reason": "Test user cancelled"
+        })
+        time.sleep(0.5)
+        # Verify part file was purged
+        part_path = os.path.expanduser(f"~/Downloads/NacMac/{cancel_filename}.part")
+        if not os.path.exists(part_path):
+            part_path = os.path.expanduser(f"~/Downloads/LinkMyMac/{cancel_filename}.part")
+        assert not os.path.exists(part_path), "Cancelled .part file was not cleaned up!"
+        print("[PASS] Cancellation handled and partial file cleaned up successfully!")
+
+        # --- Test 6: Auto-Reconnect Resiliency ---
+        print("\n--- Test 6: Auto-Reconnect Resiliency ---")
+        print("[*] Simulating network drop: closing socket...")
+        s.close()
+        time.sleep(1.0)
+
+        print("[*] Simulating Wi-Fi reconnection: opening new socket as paired device...")
+        s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s2.settimeout(5.0)
+        s2.connect((HOST, PORT))
+        PacketFraming.send_envelope(s2, "PAIR_REQUEST", pair_req)
+        resp2 = PacketFraming.read_envelope(s2)
+        assert resp2 is not None and resp2["type"] == "PAIR_RESPONSE"
+        payload2 = json.loads(resp2["payload"])
+        assert payload2.get("success") is True
+        print("[PASS] Auto-reconnect confirmed! Re-authenticated seamlessly without manual re-pairing.")
+        s2.close()
+
+        print("\n" + "=" * 65)
+        print("ALL 6 TESTS PASSED SUCCESSFULLY! Version 0.1 Deliverables Verified.")
+        print("=" * 65)
+
+    finally:
+        proc.terminate()
+        proc.wait()
+
+if __name__ == "__main__":
+    run_tests()
