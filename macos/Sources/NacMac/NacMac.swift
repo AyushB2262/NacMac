@@ -17,7 +17,10 @@ final class NacMacApp: NSObject, NSApplicationDelegate {
         print("Dashboard Window & Menu Bar Drop Target Initializing")
         print("==================================================")
         
-        // 1. Setup Menu Bar Icon & Context Menu
+        // 1. Setup Standard macOS Application Menu Bar (NacMac, File, Edit, View, Window, Help)
+        AppMenuController.shared.setup()
+        
+        // 2. Setup Menu Bar Icon & Context Menu
         MenuBarController.shared.setup()
         
         // 2. Request Notification Permissions

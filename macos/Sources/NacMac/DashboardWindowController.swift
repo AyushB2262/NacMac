@@ -1,6 +1,16 @@
 import AppKit
 import SwiftUI
 
+final class DashboardWindow: NSWindow {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers?.lowercased() == "q" {
+            NSApp.terminate(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 @MainActor
 public final class DashboardWindowController: NSObject, NSWindowDelegate {
     public static let shared = DashboardWindowController()
@@ -20,7 +30,7 @@ public final class DashboardWindowController: NSObject, NSWindowDelegate {
         
         let hostingController = NSHostingController(rootView: DashboardView())
         
-        let newWindow = NSWindow(
+        let newWindow = DashboardWindow(
             contentRect: NSRect(x: 0, y: 0, width: 980, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,

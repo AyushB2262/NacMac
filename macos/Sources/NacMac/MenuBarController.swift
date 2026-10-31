@@ -107,40 +107,40 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
         
         menu.addItem(NSMenuItem.separator())
         
-        let dashboardItem = NSMenuItem(title: "Open NacMac Dashboard...", action: #selector(openDashboard), keyEquivalent: "d")
+        let dashboardItem = NSMenuItem(title: "Open NacMac Dashboard...", action: #selector(openDashboard), keyEquivalent: "")
         dashboardItem.target = self
         menu.addItem(dashboardItem)
         
-        let qrItem = NSMenuItem(title: "Pair New Phone (Show QR)...", action: #selector(showPairingWindow), keyEquivalent: "p")
+        let qrItem = NSMenuItem(title: "Pair New Phone (Show QR)...", action: #selector(showPairingWindow), keyEquivalent: "")
         qrItem.target = self
         menu.addItem(qrItem)
         
-        let sendItem = NSMenuItem(title: "Send File to Phone...", action: #selector(selectAndSendFile), keyEquivalent: "s")
+        let sendItem = NSMenuItem(title: "Send File to Phone...", action: #selector(selectAndSendFile), keyEquivalent: "")
         sendItem.target = self
         menu.addItem(sendItem)
         
-        let openFolderItem = NSMenuItem(title: "Open Downloads Folder", action: #selector(openDownloadsFolder), keyEquivalent: "o")
+        let openFolderItem = NSMenuItem(title: "Open Downloads Folder", action: #selector(openDownloadsFolder), keyEquivalent: "")
         openFolderItem.target = self
         menu.addItem(openFolderItem)
         
         menu.addItem(NSMenuItem.separator())
         
-        let unpairItem = NSMenuItem(title: "Unpair Current Device", action: #selector(unpairDevice), keyEquivalent: "u")
+        let unpairItem = NSMenuItem(title: "Unpair Current Device", action: #selector(unpairDevice), keyEquivalent: "")
         unpairItem.target = self
         menu.addItem(unpairItem)
         
-        let quitItem = NSMenuItem(title: "Quit NacMac", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit NacMac", action: #selector(quitApp), keyEquivalent: "")
         quitItem.target = self
         menu.addItem(quitItem)
     }
     
     // MARK: - Actions
     
-    @objc private func openDashboard() {
+    @objc func openDashboard() {
         DashboardWindowController.shared.show()
     }
     
-    @objc private func showPairingWindow() {
+    @objc func showPairingWindow() {
         if let existing = qrWindow {
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -186,7 +186,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
         NSApp.activate(ignoringOtherApps: true)
     }
     
-    @objc private func selectAndSendFile() {
+    @objc func selectAndSendFile() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -197,12 +197,12 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
         }
     }
     
-    @objc private func openDownloadsFolder() {
+    @objc func openDownloadsFolder() {
         let url = FileTransferManager.shared.downloadDirectory
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
     }
     
-    @objc private func unpairDevice() {
+    @objc func unpairDevice() {
         PairingManager.shared.unpair()
         statusMenuItem.title = "Status: Unpaired (Ready to pair)"
         statusView.isConnected = false
