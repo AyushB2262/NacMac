@@ -32,7 +32,7 @@
                     android:textColor="@color/text_primary"
                     android:textSize="24sp"
                     android:textStyle="bold"
-                    android:letterSpacing="0.02" />
+                    android:letterSpacing="-0.02" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -53,33 +53,33 @@
                 <!-- Theme Toggle Button (Dark / Light) -->
                 <ImageView
                     android:id="@+id/btnThemeToggle"
-                    android:layout_width="34dp"
-                    android:layout_height="34dp"
-                    android:padding="5dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:padding="10dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@android:drawable/ic_menu_day"
+                    android:src="@drawable/ic_moon"
                     app:tint="@color/icon_tint"
                     android:contentDescription="Toggle Theme" />
 
                 <ImageView
                     android:id="@+id/btnSettings"
-                    android:layout_width="34dp"
-                    android:layout_height="34dp"
-                    android:layout_marginStart="6dp"
-                    android:padding="5dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="2dp"
+                    android:padding="10dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@android:drawable/ic_menu_preferences"
+                    android:src="@drawable/ic_settings"
                     app:tint="@color/icon_tint"
                     android:contentDescription="Settings" />
 
                 <ImageView
                     android:id="@+id/btnHelp"
-                    android:layout_width="34dp"
-                    android:layout_height="34dp"
-                    android:layout_marginStart="6dp"
-                    android:padding="5dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="2dp"
+                    android:padding="10dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@android:drawable/ic_menu_help"
+                    android:src="@drawable/ic_help"
                     app:tint="@color/icon_tint"
                     android:contentDescription="Help" />
             </LinearLayout>
@@ -99,7 +99,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="20dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/border_card"
             app:strokeWidth="1dp"
@@ -122,7 +122,7 @@
                         android:id="@+id/imgDeviceIcon"
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:background="@color/bg_icon_container"
+                        android:background="@drawable/bg_rounded_icon"
                         android:padding="8dp"
                         android:src="@drawable/ic_laptop"
                         app:tint="@color/icon_tint" />
@@ -168,6 +168,7 @@
                         android:textColor="#B91C1C"
                         android:textSize="12sp"
                         android:textStyle="bold"
+                        app:cornerRadius="8dp"
                         android:paddingStart="12dp"
                         android:paddingEnd="12dp"
                         android:paddingTop="0dp"
@@ -210,7 +211,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="20dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/border_card"
             app:strokeWidth="1dp"
@@ -281,7 +282,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="20dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/border_card"
             app:strokeWidth="1dp"
@@ -320,7 +321,7 @@
                     android:textColor="#FFFFFF"
                     android:textSize="14sp"
                     android:textStyle="bold"
-                    app:cornerRadius="24dp" />
+                    app:cornerRadius="12dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -329,7 +330,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="20dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/border_card"
             app:strokeWidth="1dp"
@@ -368,7 +369,7 @@
                     android:textColor="#FFFFFF"
                     android:textSize="14sp"
                     android:textStyle="bold"
-                    app:cornerRadius="24dp" />
+                    app:cornerRadius="12dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -377,7 +378,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="20dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/border_card"
             app:strokeWidth="1dp"
@@ -436,7 +437,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="14dp"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="20dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/border_card"
             app:strokeWidth="1dp"

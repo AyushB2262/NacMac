@@ -163,15 +163,16 @@ public struct DashboardView: View {
                 }
             }
             .background(Color(NSColor.controlBackgroundColor).opacity(0.6))
+            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: state.selectedTab)
         }
         .frame(minWidth: 960, minHeight: 640)
         .overlay {
             if isShowingLargeQR, let qr = state.qrCodeImage {
                 ZStack {
-                    Color.black.opacity(0.6)
+                    Color.black.opacity(0.55)
                         .edgesIgnoringSafeArea(.all)
                         .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.2)) {
+                            withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
                                 isShowingLargeQR = false
                             }
                         }
@@ -184,11 +185,11 @@ public struct DashboardView: View {
                             .padding(22)
                             .background(Color.white)
                             .cornerRadius(18)
-                            .shadow(color: Color.black.opacity(0.4), radius: 30, x: 0, y: 14)
+                            .shadow(color: Color.black.opacity(0.35), radius: 28, x: 0, y: 12)
                     }
-                    .transition(.scale(scale: 0.88).combined(with: .opacity))
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
                     .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
                             isShowingLargeQR = false
                         }
                     }
@@ -217,7 +218,7 @@ public struct DashboardView: View {
             Spacer()
             
             Button(action: {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                     appearanceMode = (appearanceMode == "dark") ? "light" : "dark"
                 }
             }) {
@@ -255,7 +256,11 @@ public struct DashboardView: View {
     }
     
     private func sidebarButton(title: String, icon: String, id: String) -> some View {
-        Button(action: { state.selectedTab = id }) {
+        Button(action: {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+                state.selectedTab = id
+            }
+        }) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
                     .frame(width: 18)
@@ -268,9 +273,11 @@ public struct DashboardView: View {
             .background(state.selectedTab == id ? Color.accentColor.opacity(0.15) : Color.clear)
             .cornerRadius(8)
             .padding(.horizontal, 10)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundColor(state.selectedTab == id ? .accentColor : .primary)
+        .animation(.spring(response: 0.28, dampingFraction: 0.84), value: state.selectedTab)
     }
     
     // MARK: - Main Tab: Devices (Image #2)
@@ -303,8 +310,8 @@ public struct DashboardView: View {
     private var headerView: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("NacMac")
-                .font(.system(size: 20, weight: .heavy, design: .default))
-                .tracking(0.5)
+                .font(.system(size: 22, weight: .bold, design: .default))
+                .tracking(-0.35)
             Text("Android Connectivity")
                 .font(.system(size: 12, weight: .regular))
                 .foregroundColor(.secondary)
@@ -316,6 +323,7 @@ public struct DashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("My Devices")
                 .font(.system(size: 14, weight: .semibold))
+                .tracking(-0.2)
             
             HStack(spacing: 12) {
                 Image(systemName: "iphone.gen3")
@@ -373,15 +381,17 @@ public struct DashboardView: View {
                             .padding(.vertical, 5)
                     }
                     .buttonStyle(.bordered)
+                    .cornerRadius(8)
                 }
             }
             .padding(14)
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(10)
+            .cornerRadius(12)
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
             )
+            .shadow(color: Color.black.opacity(appearanceMode == "dark" ? 0.22 : 0.04), radius: 8, x: 0, y: 3)
         }
         .frame(maxWidth: .infinity)
     }
@@ -391,6 +401,7 @@ public struct DashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Pair New Device")
                 .font(.system(size: 14, weight: .semibold))
+                .tracking(-0.2)
             
             HStack(spacing: 14) {
                 if let qr = state.qrCodeImage {
@@ -404,7 +415,7 @@ public struct DashboardView: View {
                         .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                            withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
                                 isShowingLargeQR = true
                             }
                         }
@@ -441,11 +452,12 @@ public struct DashboardView: View {
             }
             .padding(14)
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(10)
+            .cornerRadius(12)
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
             )
+            .shadow(color: Color.black.opacity(appearanceMode == "dark" ? 0.22 : 0.04), radius: 8, x: 0, y: 3)
         }
         .frame(width: 320)
     }
@@ -455,6 +467,7 @@ public struct DashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("File Transfer & Progress Hub")
                 .font(.system(size: 14, weight: .semibold))
+                .tracking(-0.2)
             
             Button(action: {
                 selectFileManually()
@@ -475,7 +488,7 @@ public struct DashboardView: View {
                 .padding(.vertical, 28)
                 .background(isTargeted ? Color.accentColor.opacity(0.08) : Color.clear)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: 12)
                         .stroke(isTargeted ? Color.accentColor : Color.gray.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
                 )
             }
@@ -501,6 +514,7 @@ public struct DashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Transfer Queue")
                 .font(.system(size: 14, weight: .semibold))
+                .tracking(-0.2)
             
             VStack(alignment: .leading, spacing: 12) {
                 if state.activeTransfer == nil && state.completedTransfers.isEmpty {
@@ -582,11 +596,12 @@ public struct DashboardView: View {
             }
             .padding(14)
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(10)
+            .cornerRadius(12)
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
             )
+            .shadow(color: Color.black.opacity(appearanceMode == "dark" ? 0.22 : 0.04), radius: 8, x: 0, y: 3)
         }
         .frame(width: 320)
     }
@@ -597,6 +612,7 @@ public struct DashboardView: View {
             HStack {
                 Text("Native Mirroring Section")
                     .font(.system(size: 14, weight: .semibold))
+                    .tracking(-0.2)
                 Spacer()
                 if !state.notifications.isEmpty {
                     Button("Clear All") {
@@ -618,11 +634,12 @@ public struct DashboardView: View {
                     Spacer()
                 }
                 .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(10)
+                .cornerRadius(12)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
                 )
+                .shadow(color: Color.black.opacity(appearanceMode == "dark" ? 0.22 : 0.04), radius: 8, x: 0, y: 3)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -674,11 +691,12 @@ public struct DashboardView: View {
                             .padding(10)
                             .frame(width: 260)
                             .background(Color(NSColor.controlBackgroundColor))
-                            .cornerRadius(10)
+                            .cornerRadius(12)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
                             )
+                            .shadow(color: Color.black.opacity(appearanceMode == "dark" ? 0.22 : 0.04), radius: 8, x: 0, y: 3)
                         }
                     }
                     .padding(.vertical, 2)

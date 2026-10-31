@@ -9,7 +9,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import android.content.res.Configuration
@@ -136,10 +140,66 @@ class MainActivity : AppCompatActivity() {
         progressTransfer = findViewById(R.id.progressTransfer)
         txtTransferSpeed = findViewById(R.id.txtTransferSpeed)
         switchNotifMirroring = findViewById(R.id.switchNotifMirroring)
+
+        val isNight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        findViewById<ImageView>(R.id.btnThemeToggle)?.setImageResource(
+            if (isNight) R.drawable.ic_sun else R.drawable.ic_moon
+        )
+    }
+
+    private fun View.applyApplePressEffect(onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+        setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate()
+                        .scaleX(0.965f)
+                        .scaleY(0.965f)
+                        .setDuration(90)
+                        .setInterpolator(DecelerateInterpolator())
+                        .start()
+                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(160)
+                        .setInterpolator(OvershootInterpolator(1.4f))
+                        .start()
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    v.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(120)
+                        .setInterpolator(DecelerateInterpolator())
+                        .start()
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val isInside = event.x in 0f..v.width.toFloat() && event.y in 0f..v.height.toFloat()
+                    if (!isInside) {
+                        v.animate()
+                            .scaleX(1.0f)
+                            .scaleY(1.0f)
+                            .setDuration(120)
+                            .setInterpolator(DecelerateInterpolator())
+                            .start()
+                    }
+                }
+            }
+            false
+        }
+        setOnClickListener { onClick() }
+        if (onLongClick != null) {
+            setOnLongClickListener {
+                onLongClick()
+                true
+            }
+        }
     }
 
     private fun setupListeners() {
-        btnDisconnect.setOnClickListener {
+        btnDisconnect.applyApplePressEffect {
             deviceStore.unpair()
             connectionManager.disconnect()
             updateDisconnectedUI()
@@ -151,11 +211,10 @@ class MainActivity : AppCompatActivity() {
             qrScannerLauncher.launch(intent)
         }
 
-        btnScanQR.setOnClickListener { openScanner() }
-        btnScanQR.setOnLongClickListener {
-            showPairingDialog()
-            true
-        }
+        btnScanQR.applyApplePressEffect(
+            onLongClick = { showPairingDialog() },
+            onClick = { openScanner() }
+        )
 
         val launchFilePicker = {
             if (connectionManager.status.value is ConnectionStatus.Connected) {
@@ -165,7 +224,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        btnSendFile.setOnClickListener { launchFilePicker() }
+        btnSendFile.applyApplePressEffect { launchFilePicker() }
 
         switchNotifMirroring.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
@@ -173,16 +232,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<View>(R.id.btnHelp)?.setOnClickListener {
+        findViewById<View>(R.id.btnHelp)?.applyApplePressEffect {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://nactore.com"))
             startActivity(intent)
         }
 
-        findViewById<View>(R.id.btnThemeToggle)?.setOnClickListener {
+        findViewById<View>(R.id.btnThemeToggle)?.applyApplePressEffect {
             toggleTheme()
         }
 
-        findViewById<View>(R.id.btnSettings)?.setOnClickListener {
+        findViewById<View>(R.id.btnSettings)?.applyApplePressEffect {
             showSettingsDialog()
         }
     }

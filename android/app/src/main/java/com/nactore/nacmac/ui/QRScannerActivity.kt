@@ -11,7 +11,11 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
@@ -71,16 +75,61 @@ class QRScannerActivity : AppCompatActivity() {
         checkCameraPermission()
     }
 
+    private fun View.applyApplePressEffect(onClick: () -> Unit) {
+        setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate()
+                        .scaleX(0.965f)
+                        .scaleY(0.965f)
+                        .setDuration(90)
+                        .setInterpolator(DecelerateInterpolator())
+                        .start()
+                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(160)
+                        .setInterpolator(OvershootInterpolator(1.4f))
+                        .start()
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    v.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(120)
+                        .setInterpolator(DecelerateInterpolator())
+                        .start()
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val isInside = event.x in 0f..v.width.toFloat() && event.y in 0f..v.height.toFloat()
+                    if (!isInside) {
+                        v.animate()
+                            .scaleX(1.0f)
+                            .scaleY(1.0f)
+                            .setDuration(120)
+                            .setInterpolator(DecelerateInterpolator())
+                            .start()
+                    }
+                }
+            }
+            false
+        }
+        setOnClickListener { onClick() }
+    }
+
     private fun setupUI() {
-        findViewById<View>(R.id.btnClose).setOnClickListener {
+        findViewById<View>(R.id.btnClose).applyApplePressEffect {
             finish()
         }
 
-        findViewById<View>(R.id.btnFlash).setOnClickListener {
+        findViewById<View>(R.id.btnFlash).applyApplePressEffect {
             toggleFlashlight()
         }
 
-        findViewById<View>(R.id.btnUploadFromGallery).setOnClickListener {
+        findViewById<View>(R.id.btnUploadFromGallery).applyApplePressEffect {
             galleryLauncher.launch("image/*")
         }
     }
