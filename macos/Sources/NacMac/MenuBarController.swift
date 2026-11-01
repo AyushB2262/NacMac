@@ -215,7 +215,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
     
     private func handleDroppedFiles(_ urls: [URL]) {
         for url in urls {
-            print("[LMM-UI] File dropped onto Menu Bar: \(url.lastPathComponent)")
+            print("[NacMac-UI] File dropped onto Menu Bar: \(url.lastPathComponent)")
             NetworkServer.shared.sendFile(at: url)
         }
     }
@@ -249,7 +249,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
     }
     
     nonisolated public func errorOccurred(_ message: String) {
-        print("[LMM-UI] Network error: \(message)")
+        print("[NacMac-UI] Network error: \(message)")
     }
     
     // MARK: - FileTransferDelegate

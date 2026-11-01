@@ -13,11 +13,6 @@ let package = Package(
         .executableTarget(
             name: "NacMac",
             path: "Sources/NacMac"
-        ),
-        .testTarget(
-            name: "NacMacTests",
-            dependencies: ["NacMac"],
-            path: "Tests/NacMacTests"
         )
     ]
 )

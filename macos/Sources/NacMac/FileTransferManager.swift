@@ -164,7 +164,7 @@ public final class FileTransferManager: @unchecked Sendable {
     
     // MARK: - Sending Files to Android
     
-    public func sendFile(at fileURL: URL, sendChunkHandler: @escaping (LMMEnvelope) -> Void) {
+    public func sendFile(at fileURL: URL, sendChunkHandler: @escaping @Sendable (NacMacEnvelope) -> Void) {
         let transferId = UUID().uuidString
         let filename = fileURL.lastPathComponent
         
@@ -179,15 +179,15 @@ public final class FileTransferManager: @unchecked Sendable {
         // 1. Send FILE_START
         let startPayload = FileStartPayload(transferId: transferId, filename: filename, size: size)
         if let data = try? JSONEncoder().encode(startPayload), let json = String(data: data, encoding: .utf8) {
-            sendChunkHandler(LMMEnvelope(type: .fileStart, payload: json))
+            sendChunkHandler(NacMacEnvelope(type: .fileStart, payload: json))
         }
         
         let chunkSize = 256 * 1024 // High-throughput 256 KB chunks (optimized streaming)
-        var offset: Int64 = 0
         let startTime = Date()
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
+            var offset: Int64 = 0
             
             while offset < size {
                 self.lock.lock()
@@ -197,7 +197,7 @@ public final class FileTransferManager: @unchecked Sendable {
                     try? handle.close()
                     let cancelPayload = FileCancelPayload(transferId: transferId, reason: "Cancelled by sender")
                     if let d = try? JSONEncoder().encode(cancelPayload), let j = String(data: d, encoding: .utf8) {
-                        sendChunkHandler(LMMEnvelope(type: .fileCancel, payload: j))
+                        sendChunkHandler(NacMacEnvelope(type: .fileCancel, payload: j))
                     }
                     return
                 }
@@ -215,7 +215,7 @@ public final class FileTransferManager: @unchecked Sendable {
                 )
                 
                 if let d = try? JSONEncoder().encode(chunkPayload), let j = String(data: d, encoding: .utf8) {
-                    sendChunkHandler(LMMEnvelope(type: .fileChunk, payload: j))
+                    sendChunkHandler(NacMacEnvelope(type: .fileChunk, payload: j))
                 }
                 
                 offset += Int64(chunkData.count)
@@ -238,7 +238,7 @@ public final class FileTransferManager: @unchecked Sendable {
             // Send FILE_END
             let endPayload = FileEndPayload(transferId: transferId, totalBytes: size)
             if let d = try? JSONEncoder().encode(endPayload), let j = String(data: d, encoding: .utf8) {
-                sendChunkHandler(LMMEnvelope(type: .fileEnd, payload: j))
+                sendChunkHandler(NacMacEnvelope(type: .fileEnd, payload: j))
             }
             
             self.delegate?.transferDidComplete(transferId: transferId, filename: filename, isReceiving: false)

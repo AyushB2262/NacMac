@@ -1,7 +1,7 @@
 import Foundation
 
 // MARK: - Protocol Message Types
-public enum LMMMessageType: String, Codable, Sendable {
+public enum NacMacMessageType: String, Codable, Sendable {
     case pairRequest = "PAIR_REQUEST"
     case pairResponse = "PAIR_RESPONSE"
     case heartbeatPing = "HEARTBEAT_PING"
@@ -16,20 +16,20 @@ public enum LMMMessageType: String, Codable, Sendable {
     case error = "ERROR"
 }
 
-public typealias NacMacMessageType = LMMMessageType
+public typealias LMMMessageType = NacMacMessageType
 
 // MARK: - Top-Level Protocol Envelope
-public struct LMMEnvelope: Codable, Sendable {
-    public let type: LMMMessageType
+public struct NacMacEnvelope: Codable, Sendable {
+    public let type: NacMacMessageType
     public let payload: String // JSON-encoded string for flexible framing
     
-    public init(type: LMMMessageType, payload: String) {
+    public init(type: NacMacMessageType, payload: String) {
         self.type = type
         self.payload = payload
     }
 }
 
-public typealias NacMacEnvelope = LMMEnvelope
+public typealias LMMEnvelope = NacMacEnvelope
 
 // MARK: - Pairing Payloads
 public struct PairingQRPayload: Codable, Sendable {

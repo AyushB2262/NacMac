@@ -1,92 +1,118 @@
-# NacMac Reverse-Engineering & Continuity Bridge (NacMac-REA)
+# NacMac 🍏🤖
+> **Privacy-first, peer-to-peer Continuity bridge between Android and macOS.**  
+> Zero cloud servers. Zero data collection. End-to-end local network synergy.
 
-This repository contains the complete reverse-engineering analysis, technical specifications, and working implementation of **Version 0.2** of the privacy-first Continuity Bridge between Android and macOS.
-
----
-
-## 📦 Production Builds (Version 0.2)
-
-- **macOS Installer (DMG):** [NacMac-v0.2.dmg](file:///Users/ayush/LMM-REA/NacMac-v0.2.dmg)
-  - Features the full native desktop **Dashboard Window** + interactive Menu Bar utility.
-  - Mount the DMG and drag `NacMac.app` into `/Applications`.
-- **Android Companion (APK):** [NacMac-v0.2.apk](file:///Users/ayush/LMM-REA/NacMac-v0.2.apk)
-  - Updated card-based Material UI matching reference specifications.
-  - Install via `adb install -r NacMac-v0.2.apk` or download onto your device.
+[![macOS](https://img.shields.io/badge/macOS-13.0+-black?logo=apple&logoColor=white)](macos/)
+[![Android](https://img.shields.io/badge/Android-8.0+_(API_26+)-3DDC84?logo=android&logoColor=white)](android/)
+[![Swift](https://img.shields.io/badge/Swift-6.0-F05138?logo=swift&logoColor=white)](macos/)
+[![Kotlin](https://img.shields.io/badge/Kotlin-1.9.24-7F52FF?logo=kotlin&logoColor=white)](android/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## 1. Project Components
+## ✨ Features
+
+- ⚡ **Zero-Config P2P Pairing:** Scan a dynamic QR code on your Mac screen from the Android app to pair instantly over your local Wi-Fi.
+- 🔄 **Silent Auto-Reconnect:** Automatic background discovery and re-connection when returning home, waking from sleep, or switching Wi-Fi networks.
+- 📁 **High-Speed Chunked File Transfer:** Drag and drop files directly onto the macOS Menu Bar icon or send from Android. Streamed via 256 KB chunks encoded as Base64 in JSON envelopes with live transfer speed calculation and mid-stream cancellation support.
+- 🔔 **Real-Time Notification Mirroring:** Android notifications appear instantly as native macOS notification banners with seamless dismissal sync.
+- 🛡️ **100% Local & Private:** All communication occurs strictly over local TCP sockets (`port 52840`) on your private LAN. No cloud intermediary, no analytics, no external telemetry.
+- 🎨 **Adaptive "Preem" UI:** High-contrast, clean UI supporting native dark mode (Deep Slate `#0F172A`) and light mode with warm amber accents (`#EA580C`).
+
+---
+
+## 🏗️ Architecture & Project Structure
 
 ```
-/Users/ayush/LMM-REA/
-├── NacMac-v0.2.dmg                       # Production macOS disk image installer
-├── NacMac-v0.2.apk                       # Production Android companion application
-│
-├── macos/                                # Native macOS Dashboard + Menu Bar Client (Swift 6 / AppKit / SwiftUI)
-│   ├── NacMac.app                        # Packaged standalone macOS application bundle
-│   ├── package_app.sh                    # Automated release build & bundle script
-│   ├── package_dmg.sh                    # DMG disk image packager
-│   ├── Package.swift                     # Swift Package Manager configuration
+NacMac/
+├── macos/                                # Native macOS Application (Swift 6 / AppKit / SwiftUI)
+│   ├── Package.swift                     # Swift Package Manager manifest
+│   ├── package_app.sh                    # Automated release build and bundling script
+│   ├── package_dmg.sh                    # DMG disk image creation script
 │   └── Sources/NacMac/
-│       ├── NacMac.swift                  # Application lifecycle & NSApplicationDelegate
-│       ├── DashboardWindowController.swift# NSWindowController hosting native SwiftUI Dashboard
-│       ├── DashboardView.swift           # Native macOS Dashboard (Devices, Transfer Queue, Mirroring)
-│       ├── MenuBarController.swift       # NSStatusItem, context menu & drag-and-drop target
-│       ├── NetworkServer.swift           # Bonjour advertiser & length-prefixed TCP socket server
-│       ├── PairingManager.swift          # QR generator, crypto handshake & trust storage
+│       ├── NacMac.swift                  # App entry point & NSApplicationDelegate
+│       ├── AppMenuController.swift       # Standard macOS Menu Bar (About, Quit Cmd+Q)
+│       ├── DashboardWindowController.swift# NSWindowController hosting Dashboard
+│       ├── DashboardView.swift           # Native SwiftUI Dashboard (Device status, Transfers)
+│       ├── MenuBarController.swift       # Status bar item, QR popover & drag-drop target
+│       ├── NetworkServer.swift           # Bonjour mDNS advertiser & framed TCP socket server
+│       ├── PairingManager.swift          # Cryptographic key exchange & trusted device store
 │       ├── NotificationManager.swift     # UNUserNotificationCenter native banner dispatcher
 │       ├── FileTransferManager.swift     # Streaming chunked file receiver/sender with cancel
-│       └── Models.swift                  # Framing envelopes & protocol data structures
+│       └── Models.swift                  # Framing envelopes & wire protocol data models
 │
-├── android/                              # Android Companion App (Kotlin / Jetpack / Material 3)
+├── android/                              # Native Android Companion (Kotlin / Material 3)
 │   ├── app/src/main/
-│   │   ├── AndroidManifest.xml           # Service declarations, network & storage permissions
+│   │   ├── AndroidManifest.xml           # Foreground service & permissions configuration
 │   │   ├── java/com/nactore/nacmac/
-│   │   │   ├── ui/MainActivity.kt        # Pairing dialog, live connection card, file sender
-│   │   │   ├── service/
-│   │   │   │   ├── NacMacBackgroundService.kt       # Persistent foreground service & Wi-Fi watcher
-│   │   │   │   └── NacMacNotificationListener.kt    # Intercepts & dispatches phone notifications
-│   │   │   ├── network/
-│   │   │   │   ├── ConnectionManager.kt          # TCP socket, heartbeat keepalive, auto-reconnect
-│   │   │   │   └── DiscoveryClient.kt            # mDNS service discovery + direct TCP probe
-│   │   │   ├── transfer/FileTransferWorker.kt    # Dual-direction chunk streaming to Downloads
-│   │   │   ├── data/DeviceStore.kt               # Persisted pairing credentials
-│   │   │   └── model/Protocol.kt                 # Wire protocol definitions
-│   │   └── res/                          # Layouts, themes, and UI resources
+│   │   │   ├── ui/                       # MainActivity, QRScannerActivity, Viewfinder
+│   │   │   ├── service/                  # NacMacBackgroundService, NotificationListener
+│   │   │   ├── network/                  # TCP ConnectionManager, DiscoveryClient
+│   │   │   ├── transfer/                 # Dual-direction FileTransferWorker
+│   │   │   ├── data/                     # Encrypted/persisted DeviceStore
+│   │   │   └── model/                    # Wire protocol packet structures
+│   │   └── res/                          # Vector drawables, themes, and layouts
 │   └── build.gradle.kts                  # Gradle build system
 │
-├── tests/
-│   └── test_e2e_continuity.py            # Automated end-to-end integration & protocol test suite
-│
-├── NACMAC_FEATURE_CATALOG.md          # Comprehensive catalog of all NacMac features
-├── REVERSE_ENGINEERING_ANALYSIS.md       # Deep technical analysis of network & OS hooks
-└── V0.1_NACMAC_SPECIFICATION_AND_ROADMAP.md     # Engineering specification for Version 0.1
+└── tests/
+    └── test_e2e_continuity.py            # Automated end-to-end integration & protocol test suite
 ```
 
 ---
 
-## 2. Version 0.1 Implemented Deliverables
+## 🚀 Getting Started
 
-| Deliverable | Implementation Details | Verification Status |
-| :--- | :--- | :--- |
-| **1. Pairing & Auto-Reconnect** | • QR code generation on Mac encoding local IP, port `52840`, and ephemeral secret.<br>• One-time pairing handshake (`PAIR_REQUEST` / `PAIR_RESPONSE`).<br>• Persistent trust storage (`~/.nacmac/paired_device.json`).<br>• Zero-touch auto-reconnect upon Wi-Fi connection, wake from sleep, or reboot. | **VERIFIED** (Automated Test 1 & 6) |
-| **2. Bidirectional File Transfer** | • Drag & drop any file or folder onto the macOS Menu Bar icon (`NSDraggingDestination`).<br>• Streaming 64 KB binary chunks with live speed (MB/s) and progress calculation.<br>• Mid-transfer cancellation support with automatic `.part` file cleanup.<br>• Recipient verifies byte-for-byte SHA-256 integrity and saves to `Downloads/NacMac`. | **VERIFIED** (Automated Test 4 & 5) |
-| **3. Notification Mirroring** | • Android `NotificationListenerService` captures phone notifications and app icons.<br>• Payloads forwarded over local TCP socket to macOS.<br>• Mac dispatches native notification banners via `UserNotifications` / native notification scripting.<br>• Dismissals synced dynamically between devices. | **VERIFIED** (Automated Test 3) |
+### Prerequisites
+
+- **macOS:** macOS Ventura (13.0) or newer, Xcode Command Line Tools (`xcode-select --install`), Swift 6.0+.
+- **Android:** Android 8.0+ (Oreo, API 26+), Android SDK, JDK 17.
+
+### Building & Running macOS Client
+
+```bash
+cd macos
+
+# Build release bundle (creates NacMac.app)
+./package_app.sh
+
+# Launch application
+open NacMac.app
+```
+
+The app will appear in your macOS Menu Bar. Click the icon to view your pairing QR code or drag files directly onto the menu bar icon to send to Android.
+
+### Building Android Companion
+
+```bash
+cd android
+
+# Build debug APK
+./gradlew assembleDebug
+
+# Install to connected device via ADB
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
 
 ---
 
-## 3. Running & Verifying
+## 🧪 Testing & Verification
 
-### Run the Automated End-to-End Test Suite
-To verify the complete protocol handshake, heartbeat, notification mirroring, file transfer with SHA-256 integrity, cancellation, and auto-reconnect resiliency:
+NacMac includes an automated, headless end-to-end verification suite testing pairing handshakes, heartbeat ping/pong, notification dispatch, chunked file transfer with SHA-256 validation, and auto-reconnection (non-destructively preserving existing user configuration):
+
 ```bash
-python3 /Users/ayush/LMM-REA/tests/test_e2e_continuity.py
+python3 tests/test_e2e_continuity.py
 ```
 
-### Launch the macOS Menu Bar App
-You can launch the compiled native macOS app directly:
-```bash
-open /Users/ayush/LMM-REA/macos/NacMac.app
-```
-*(Or run `/Users/ayush/LMM-REA/macos/.build/release/NacMac` from terminal).*
-The app will appear in your top-right macOS Menu Bar with a phone icon. Click it to view the pairing QR code, check connection status, or drag-and-drop files directly onto it to share with Android.
+---
+
+## 🔒 Security & Privacy
+
+1. **No External Infrastructure:** NacMac does not phone home, does not require an account, and does not relay data through third-party servers.
+2. **Ephemeral Handshake:** During pairing, secrets are exchanged locally via an ephemeral dynamic token displayed as a QR code.
+3. **Local Socket Framing & Session Authorization:** Packets are framed with a 4-byte big-endian length prefix followed by UTF-8 JSON envelopes. The server strictly binds authorization to authenticated connections, rejecting any unauthenticated file transfers or notification injections.
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.

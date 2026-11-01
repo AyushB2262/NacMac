@@ -20,6 +20,7 @@ public final class NetworkServer: @unchecked Sendable {
     
     private var listener: NWListener?
     private var activeConnection: NWConnection?
+    private var isConnectionAuthenticated: Bool = false
     private var netService: NetService?
     private var legacyNetService: NetService?
     private let queue = DispatchQueue(label: "com.nactore.nacmac.network.server", qos: .userInitiated)
@@ -136,6 +137,7 @@ public final class NetworkServer: @unchecked Sendable {
             }
             
             self.activeConnection = conn
+            self.isConnectionAuthenticated = false
             
             conn.stateUpdateHandler = { [weak self] state in
                 guard let self = self else { return }
@@ -147,9 +149,9 @@ public final class NetworkServer: @unchecked Sendable {
                     self.startHeartbeat()
                 case .failed(let err):
                     print("[NacMac-Network] Connection failed: \(err)")
-                    self.handleDisconnection()
+                    self.handleDisconnection(for: conn)
                 case .cancelled:
-                    self.handleDisconnection()
+                    self.handleDisconnection(for: conn)
                 default:
                     break
                 }
@@ -159,9 +161,14 @@ public final class NetworkServer: @unchecked Sendable {
         }
     }
     
-    private func handleDisconnection() {
+    private func handleDisconnection(for conn: NWConnection? = nil) {
+        if let conn = conn, let active = self.activeConnection, conn !== active {
+            // Disconnection was from a superseded or stale connection; do not affect active connection.
+            return
+        }
         stopHeartbeat()
         activeConnection = nil
+        isConnectionAuthenticated = false
         print("[NacMac-Network] Peer disconnected. Standing by for auto-reconnect...")
         updateState(.listening(port: port.rawValue))
     }
@@ -175,24 +182,24 @@ public final class NetworkServer: @unchecked Sendable {
             
             if let error = error {
                 print("[NacMac-Network] Read header error: \(error)")
-                self.handleDisconnection()
+                self.handleDisconnection(for: conn)
                 return
             }
             
             if isComplete && (data == nil || data?.isEmpty == true) {
-                self.handleDisconnection()
+                self.handleDisconnection(for: conn)
                 return
             }
             
             guard let headerData = data, headerData.count == 4 else {
-                self.handleDisconnection()
+                self.handleDisconnection(for: conn)
                 return
             }
             
             let length = UInt32(bigEndian: headerData.withUnsafeBytes { $0.load(as: UInt32.self) })
             guard length > 0 && length < 100 * 1024 * 1024 else { // sanity cap 100MB
                 print("[NacMac-Network] Invalid message length: \(length)")
-                self.handleDisconnection()
+                self.handleDisconnection(for: conn)
                 return
             }
             
@@ -206,7 +213,7 @@ public final class NetworkServer: @unchecked Sendable {
             
             if let error = error {
                 print("[NacMac-Network] Read payload error: \(error)")
-                self.handleDisconnection()
+                self.handleDisconnection(for: conn)
                 return
             }
             
@@ -217,7 +224,7 @@ public final class NetworkServer: @unchecked Sendable {
             if !isComplete {
                 self.readNextMessage(from: conn)
             } else {
-                self.handleDisconnection()
+                self.handleDisconnection(for: conn)
             }
         }
     }
@@ -225,7 +232,7 @@ public final class NetworkServer: @unchecked Sendable {
     // MARK: - Message Dispatching
     
     private func processInboundData(_ data: Data) {
-        guard let envelope = try? JSONDecoder().decode(LMMEnvelope.self, from: data) else {
+        guard let envelope = try? JSONDecoder().decode(NacMacEnvelope.self, from: data) else {
             print("[NacMac-Network] Failed to decode envelope")
             return
         }
@@ -235,43 +242,67 @@ public final class NetworkServer: @unchecked Sendable {
             handlePairRequest(envelope.payload)
             
         case .heartbeatPing:
-            sendEnvelope(LMMEnvelope(type: .heartbeatPong, payload: "{}"))
+            sendEnvelope(NacMacEnvelope(type: .heartbeatPong, payload: "{}"))
             
         case .heartbeatPong:
             // Heartbeat acknowledged
             break
             
         case .notification:
+            guard isConnectionAuthenticated else {
+                print("[NacMac-Security] Blocked unauthorized .notification from unauthenticated connection")
+                return
+            }
             if let payloadData = envelope.payload.data(using: .utf8),
                let notif = try? JSONDecoder().decode(NotificationPayload.self, from: payloadData) {
                 NotificationManager.shared.deliverNotification(notif)
             }
             
         case .notificationDismissed:
+            guard isConnectionAuthenticated else {
+                print("[NacMac-Security] Blocked unauthorized .notificationDismissed from unauthenticated connection")
+                return
+            }
             if let payloadData = envelope.payload.data(using: .utf8),
                let dismiss = try? JSONDecoder().decode(NotificationDismissPayload.self, from: payloadData) {
                 NotificationManager.shared.dismissNotification(id: dismiss.id)
             }
             
         case .fileStart:
+            guard isConnectionAuthenticated else {
+                print("[NacMac-Security] Blocked unauthorized .fileStart from unauthenticated connection")
+                return
+            }
             if let payloadData = envelope.payload.data(using: .utf8),
                let start = try? JSONDecoder().decode(FileStartPayload.self, from: payloadData) {
                 _ = FileTransferManager.shared.handleFileStart(start)
             }
             
         case .fileChunk:
+            guard isConnectionAuthenticated else {
+                print("[NacMac-Security] Blocked unauthorized .fileChunk from unauthenticated connection")
+                return
+            }
             if let payloadData = envelope.payload.data(using: .utf8),
                let chunk = try? JSONDecoder().decode(FileChunkPayload.self, from: payloadData) {
                 _ = FileTransferManager.shared.handleFileChunk(chunk)
             }
             
         case .fileEnd:
+            guard isConnectionAuthenticated else {
+                print("[NacMac-Security] Blocked unauthorized .fileEnd from unauthenticated connection")
+                return
+            }
             if let payloadData = envelope.payload.data(using: .utf8),
                let end = try? JSONDecoder().decode(FileEndPayload.self, from: payloadData) {
                 _ = FileTransferManager.shared.handleFileEnd(end)
             }
             
         case .fileCancel:
+            guard isConnectionAuthenticated else {
+                print("[NacMac-Security] Blocked unauthorized .fileCancel from unauthenticated connection")
+                return
+            }
             if let payloadData = envelope.payload.data(using: .utf8),
                let cancel = try? JSONDecoder().decode(FileCancelPayload.self, from: payloadData) {
                 FileTransferManager.shared.handleFileCancel(cancel)
@@ -289,6 +320,7 @@ public final class NetworkServer: @unchecked Sendable {
         }
         
         let success = PairingManager.shared.validatePairRequest(req)
+        self.isConnectionAuthenticated = success
         let resp = PairResponsePayload(
             success: success,
             macName: PairingManager.shared.macName,
@@ -296,18 +328,20 @@ public final class NetworkServer: @unchecked Sendable {
         )
         
         if let respData = try? JSONEncoder().encode(resp), let respJson = String(data: respData, encoding: .utf8) {
-            sendEnvelope(LMMEnvelope(type: .pairResponse, payload: respJson))
+            sendEnvelope(NacMacEnvelope(type: .pairResponse, payload: respJson))
         }
         
         if success {
             print("[NacMac-Network] Successfully paired with: \(req.deviceName) (\(req.androidId))")
             updateState(.connected(deviceName: req.deviceName, ip: "Remote Peer"))
+        } else {
+            print("[NacMac-Security] Authentication failed for: \(req.deviceName) (\(req.androidId))")
         }
     }
     
     // MARK: - Outbound Transmission
     
-    public func sendEnvelope(_ envelope: LMMEnvelope) {
+    public func sendEnvelope(_ envelope: NacMacEnvelope) {
         queue.async { [weak self] in
             guard let self = self, let conn = self.activeConnection else { return }
             guard let payloadData = try? JSONEncoder().encode(envelope) else { return }
@@ -337,7 +371,7 @@ public final class NetworkServer: @unchecked Sendable {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 10, repeating: 10)
         timer.setEventHandler { [weak self] in
-            self?.sendEnvelope(LMMEnvelope(type: .heartbeatPing, payload: "{}"))
+            self?.sendEnvelope(NacMacEnvelope(type: .heartbeatPing, payload: "{}"))
         }
         timer.resume()
         heartbeatTimer = timer
