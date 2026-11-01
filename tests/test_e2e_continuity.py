@@ -20,6 +20,9 @@ import base64
 import hashlib
 import uuid
 import subprocess
+import shutil
+import atexit
+import signal
 
 PORT = 52840
 HOST = "127.0.0.1"
@@ -72,26 +75,62 @@ def run_tests():
 
     print(f"[*] Found native binary at: {bin_path}")
 
-    # Preserve user's pairing and QR state so running tests is strictly non-destructive
+    # Preserve user's pairing and QR state using persistent on-disk backups
     nacmac_dir = os.path.expanduser("~/.nacmac")
     os.makedirs(nacmac_dir, exist_ok=True)
     paired_path = os.path.join(nacmac_dir, "paired_device.json")
     qr_path = os.path.join(nacmac_dir, "active_qr.json")
-    
-    existing_pairing = None
-    existing_qr = None
+    paired_bak = os.path.join(nacmac_dir, "paired_device.json.test_bak")
+    qr_bak = os.path.join(nacmac_dir, "active_qr.json.test_bak")
+
+    # If a prior interrupted test left backups, recover them first
+    if os.path.exists(paired_bak) and not os.path.exists(paired_path):
+        shutil.move(paired_bak, paired_path)
+    if os.path.exists(qr_bak) and not os.path.exists(qr_path):
+        shutil.move(qr_bak, qr_path)
+
+    had_paired = False
+    if os.path.exists(paired_path):
+        shutil.copy2(paired_path, paired_bak)
+        os.remove(paired_path)
+        had_paired = True
+
+    had_qr = False
+    if os.path.exists(qr_path):
+        shutil.copy2(qr_path, qr_bak)
+        os.remove(qr_path)
+        had_qr = True
+
     proc = None
 
-    try:
-        if os.path.exists(paired_path):
-            with open(paired_path, "rb") as f:
-                existing_pairing = f.read()
+    def restore_user_state():
+        if had_paired and os.path.exists(paired_bak):
+            shutil.move(paired_bak, paired_path)
+        elif os.path.exists(paired_bak):
+            os.remove(paired_bak)
+        elif not had_paired and os.path.exists(paired_path):
             os.remove(paired_path)
-            
-        if os.path.exists(qr_path):
-            with open(qr_path, "rb") as f:
-                existing_qr = f.read()
+
+        if had_qr and os.path.exists(qr_bak):
+            shutil.move(qr_bak, qr_path)
+        elif os.path.exists(qr_bak):
+            os.remove(qr_bak)
+        elif not had_qr and os.path.exists(qr_path):
             os.remove(qr_path)
+
+    atexit.register(restore_user_state)
+
+    def sig_handler(sig, frame):
+        if proc is not None:
+            proc.terminate()
+            proc.wait()
+        restore_user_state()
+        sys.exit(128 + sig)
+
+    signal.signal(signal.SIGINT, sig_handler)
+    signal.signal(signal.SIGTERM, sig_handler)
+
+    try:
 
         # Launch binary as background process for test
         proc = subprocess.Popen([bin_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -263,18 +302,7 @@ def run_tests():
         if proc is not None:
             proc.terminate()
             proc.wait()
-        # Restore user pairing and QR state if existed prior to running tests
-        if existing_pairing is not None:
-            with open(paired_path, "wb") as f:
-                f.write(existing_pairing)
-        elif os.path.exists(paired_path):
-            os.remove(paired_path)
-
-        if existing_qr is not None:
-            with open(qr_path, "wb") as f:
-                f.write(existing_qr)
-        elif os.path.exists(qr_path):
-            os.remove(qr_path)
+        restore_user_state()
 
 if __name__ == "__main__":
     run_tests()

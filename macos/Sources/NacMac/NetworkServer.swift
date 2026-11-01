@@ -162,7 +162,11 @@ public final class NetworkServer: @unchecked Sendable {
     }
     
     private func handleDisconnection(for conn: NWConnection? = nil) {
-        if let conn = conn, let active = self.activeConnection, conn !== active {
+        guard let active = self.activeConnection else {
+            // No active connection or server is already stopped; ignore redundant/stale disconnections
+            return
+        }
+        if let conn = conn, conn !== active {
             // Disconnection was from a superseded or stale connection; do not affect active connection.
             return
         }
