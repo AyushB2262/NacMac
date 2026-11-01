@@ -207,7 +207,26 @@ public struct DashboardView: View {
     // MARK: - Sidebar
     private var sidebarView: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Spacer().frame(height: 32)
+            Spacer().frame(height: 24)
+            
+            HStack(spacing: 10) {
+                if let logoImg = NSImage(contentsOf: Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/nacmac-logo.png")) ?? NSImage(contentsOfFile: "/Users/ayush/LMM-REA/Logo/nacmac-logo.png") {
+                    Image(nsImage: logoImg)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 30, height: 30)
+                        .cornerRadius(6)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("NacMac")
+                        .font(.system(size: 15, weight: .bold))
+                    Text("Continuity Bridge")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
             
             sidebarButton(title: "Devices", icon: "iphone", id: "Devices")
             sidebarButton(title: "File Hub", icon: "folder", id: "File Hub")

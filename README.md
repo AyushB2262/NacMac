@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Logo/nacmac-logo.png" width="160" height="160" alt="NacMac Logo" />
+</p>
+
 # NacMac 🍏🤖
 > **Privacy-first, peer-to-peer Continuity bridge between Android and macOS.**  
 > Zero cloud servers. Zero data collection. End-to-end local network synergy.

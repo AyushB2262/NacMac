@@ -2,7 +2,7 @@ import Foundation
 @preconcurrency import UserNotifications
 import AppKit
 
-public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNotificationCenterDelegate {
+public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNotificationCenterDelegate, NSUserNotificationCenterDelegate {
     public static let shared = NotificationManager()
     
     private let cacheDir: URL
@@ -16,6 +16,7 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         super.init()
         
+        NSUserNotificationCenter.default.delegate = self
         if hasBundle {
             UNUserNotificationCenter.current().delegate = self
             requestAuthorization()
@@ -31,9 +32,15 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         completionHandler([.banner, .sound, .badge, .list])
     }
     
+    // NSUserNotificationCenterDelegate to display banner even when active
+    @available(macOS, deprecated: 11.0, message: "Legacy fallback")
+    public func userNotificationCenter(_ center: NSUserNotificationCenter, shouldPresent notification: NSUserNotification) -> Bool {
+        return true
+    }
+    
     public func requestAuthorization() {
         guard hasBundle else {
-            print("[NacMac-Notification] Running outside .app bundle. Using native Notification Scripting.")
+            print("[NacMac-Notification] Running outside .app bundle. Standing by.")
             return
         }
         
@@ -103,14 +110,14 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         print("[NacMac-Notification] Dismissed notification id: \(id)")
     }
     
+    @available(macOS, deprecated: 11.0, message: "Legacy fallback")
     public func fallbackDisplay(title: String, body: String) {
-        let cleanTitle = title.replacingOccurrences(of: "\"", with: "\\\"")
-        let cleanBody = body.replacingOccurrences(of: "\"", with: "\\\"")
-        let script = "display notification \"\(cleanBody)\" with title \"\(cleanTitle)\""
-        
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        proc.arguments = ["-e", script]
-        try? proc.run()
+        DispatchQueue.main.async {
+            let notif = NSUserNotification()
+            notif.title = title
+            notif.informativeText = body
+            notif.soundName = NSUserNotificationDefaultSoundName
+            NSUserNotificationCenter.default.deliver(notif)
+        }
     }
 }

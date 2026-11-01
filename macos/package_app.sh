@@ -33,6 +33,10 @@ if [ -f "$DIR/AppIcon.icns" ]; then
     cp "$DIR/AppIcon.icns" "$RESOURCES/AppIcon.icns"
 fi
 
+if [ -f "$DIR/../Logo/nacmac-logo.png" ]; then
+    cp "$DIR/../Logo/nacmac-logo.png" "$RESOURCES/nacmac-logo.png"
+fi
+
 cat << 'EOF' > "$CONTENTS/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -62,9 +66,18 @@ cat << 'EOF' > "$CONTENTS/Info.plist"
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>NSUserNotificationAlertStyle</key>
+    <string>banner</string>
 </dict>
 </plist>
 EOF
+
+echo "[*] Code-signing NacMac.app bundle..."
+codesign --force --deep --sign - "$APP_DIR"
+
+if [ -x "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" ]; then
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DIR"
+fi
 
 echo "[✓] NacMac.app bundle successfully created at:"
 echo "    $APP_DIR"
