@@ -2,13 +2,16 @@ package com.nactore.nacmac.ui
 
 import android.Manifest
 import android.app.AlertDialog
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.service.notification.NotificationListenerService
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -16,19 +19,23 @@ import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
-import android.content.res.Configuration
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.SwitchCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.nactore.nacmac.R
 import com.nactore.nacmac.data.DeviceStore
 import com.nactore.nacmac.data.PairedMac
+import com.nactore.nacmac.model.NacMacEnvelope
+import com.nactore.nacmac.model.NacMacMessageType
+import com.nactore.nacmac.model.NotificationPayload
 import com.nactore.nacmac.model.PairingQRPayload
 import com.nactore.nacmac.network.ConnectionManager
 import com.nactore.nacmac.network.ConnectionStatus
 import com.nactore.nacmac.service.NacMacBackgroundService
+import com.nactore.nacmac.service.NacMacNotificationListener
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -48,6 +55,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progressTransfer: ProgressBar
     private lateinit var txtTransferSpeed: TextView
     private lateinit var switchNotifMirroring: SwitchCompat
+    private lateinit var txtNotifStatus: TextView
+    private lateinit var cardNotificationMirroring: View
 
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
@@ -90,6 +99,7 @@ class MainActivity : AppCompatActivity() {
                     )
                     Toast.makeText(this, "Paired with ${payload.macName}!", Toast.LENGTH_SHORT).show()
                     connectionManager.startAutoConnect()
+                    checkAndPromptNotificationAccess()
                 }
             }
         }
@@ -128,6 +138,11 @@ class MainActivity : AppCompatActivity() {
         observeConnection()
     }
 
+    override fun onResume() {
+        super.onResume()
+        updateNotificationMirroringUI()
+    }
+
     private fun initViews() {
         txtDeviceName = findViewById(R.id.txtDeviceName)
         badgeConnected = findViewById(R.id.badgeConnected)
@@ -140,11 +155,141 @@ class MainActivity : AppCompatActivity() {
         progressTransfer = findViewById(R.id.progressTransfer)
         txtTransferSpeed = findViewById(R.id.txtTransferSpeed)
         switchNotifMirroring = findViewById(R.id.switchNotifMirroring)
+        txtNotifStatus = findViewById(R.id.txtNotifStatus)
+        cardNotificationMirroring = findViewById(R.id.cardNotificationMirroring)
 
         val isNight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         findViewById<ImageView>(R.id.btnThemeToggle)?.setImageResource(
             if (isNight) R.drawable.ic_sun else R.drawable.ic_moon
         )
+    }
+
+    private fun isNotificationAccessGranted(): Boolean {
+        val pkgName = packageName
+        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        if (!flat.isNullOrEmpty()) {
+            val names = flat.split(":")
+            for (name in names) {
+                val cn = ComponentName.unflattenFromString(name)
+                if (cn != null && cn.packageName == pkgName) {
+                    return true
+                }
+            }
+        }
+        return NotificationManagerCompat.getEnabledListenerPackages(this).contains(pkgName)
+    }
+
+    private fun updateNotificationMirroringUI() {
+        val isGranted = isNotificationAccessGranted()
+        switchNotifMirroring.setOnCheckedChangeListener(null)
+        switchNotifMirroring.isChecked = isGranted
+
+        if (isGranted) {
+            txtNotifStatus.text = "Active • All phone notifications mirror live to Mac"
+            txtNotifStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                try {
+                    NotificationListenerService.requestRebind(ComponentName(this, NacMacNotificationListener::class.java))
+                } catch (_: Exception) {}
+            }
+        } else {
+            txtNotifStatus.text = "⚠️ Tap to enable Notification Access in Settings"
+            txtNotifStatus.setTextColor(0xFFEA580C.toInt()) // Warm Amber-Orange warning
+        }
+
+        switchNotifMirroring.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked && !isNotificationAccessGranted()) {
+                showNotificationPermissionDialog()
+            } else if (!isChecked && isNotificationAccessGranted()) {
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+        }
+    }
+
+    private fun checkAndPromptNotificationAccess() {
+        if (!isNotificationAccessGranted()) {
+            showNotificationPermissionDialog()
+        }
+    }
+
+    private fun showNotificationPermissionDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad / 2)
+            gravity = android.view.Gravity.CENTER_HORIZONTAL
+        }
+
+        val imgLogo = ImageView(this).apply {
+            setImageResource(R.drawable.ic_nacmac_logo)
+            val sz = (52 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                bottomMargin = (14 * resources.displayMetrics.density).toInt()
+            }
+            contentDescription = "NacMac"
+        }
+
+        val txtDesc = TextView(this).apply {
+            text = "NacMac needs Notification Access to forward your phone notifications to your Mac.\n\n" +
+                   "1. Tap 'Open Settings' below.\n" +
+                   "2. Find 'NacMac Notification Service' and toggle it ON.\n\n" +
+                   "💡 Android 13/14/15 Note: If the toggle is greyed out ('Restricted setting'), open NacMac App Info > 3 dots (top right) > 'Allow restricted settings' first."
+            textSize = 13.5f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+            setLineSpacing(4f, 1.2f)
+        }
+
+        layout.addView(imgLogo)
+        layout.addView(txtDesc)
+
+        AlertDialog.Builder(this)
+            .setTitle("Enable Notification Mirroring")
+            .setView(layout)
+            .setPositiveButton("Open Settings") { _, _ ->
+                try {
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+            .setNegativeButton("Cancel") { _, _ ->
+                updateNotificationMirroringUI()
+            }
+            .show()
+    }
+
+    private fun showNotificationTestDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Notification Mirroring Active")
+            .setMessage("Notification Access is granted and active.\n\nWould you like to send a test notification to your Mac to verify the connection?")
+            .setPositiveButton("Send Test Notification") { _, _ ->
+                sendTestNotificationToMac()
+            }
+            .setNeutralButton("Settings") { _, _ ->
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    fun sendTestNotificationToMac() {
+        if (connectionManager.status.value !is ConnectionStatus.Connected) {
+            Toast.makeText(this, "Connect to Mac first to send test notification", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val notif = NotificationPayload(
+            id = "test_${System.currentTimeMillis()}",
+            packageName = packageName,
+            appName = "NacMac",
+            title = "Test Notification",
+            body = "Notification mirroring is active and verified with your phone!",
+            iconBase64 = null,
+            timestamp = System.currentTimeMillis() / 1000,
+            hasReplyAction = false
+        )
+        val envelope = NacMacEnvelope(NacMacMessageType.NOTIFICATION, notif.toJSON().toString())
+        connectionManager.sendEnvelope(envelope)
+        Toast.makeText(this, "Test notification sent to Mac!", Toast.LENGTH_SHORT).show()
     }
 
     private fun View.applyApplePressEffect(onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
@@ -226,9 +371,11 @@ class MainActivity : AppCompatActivity() {
 
         btnSendFile.applyApplePressEffect { launchFilePicker() }
 
-        switchNotifMirroring.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked) {
-                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        cardNotificationMirroring.applyApplePressEffect {
+            if (!isNotificationAccessGranted()) {
+                showNotificationPermissionDialog()
+            } else {
+                showNotificationTestDialog()
             }
         }
 
@@ -265,9 +412,44 @@ class MainActivity : AppCompatActivity() {
     private fun showSettingsDialog() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            val pad = (18 * resources.displayMetrics.density).toInt()
+            val pad = (20 * resources.displayMetrics.density).toInt()
             setPadding(pad, pad, pad, pad / 2)
         }
+
+        // Top Brand Header with Logo
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            val bottomPad = (16 * resources.displayMetrics.density).toInt()
+            setPadding(0, 0, 0, bottomPad)
+        }
+        val imgLogo = ImageView(this).apply {
+            setImageResource(R.drawable.ic_nacmac_logo)
+            val sz = (44 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                marginEnd = (12 * resources.displayMetrics.density).toInt()
+            }
+            contentDescription = "NacMac Logo"
+        }
+        val headerTextLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val txtTitle = TextView(this).apply {
+            text = "NacMac"
+            textSize = 18f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        val txtSubtitle = TextView(this).apply {
+            text = "Android Companion v1.0.0"
+            textSize = 12f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+        }
+        headerTextLayout.addView(txtTitle)
+        headerTextLayout.addView(txtSubtitle)
+        header.addView(imgLogo)
+        header.addView(headerTextLayout)
+        layout.addView(header)
 
         val txtDeviceLabel = TextView(this).apply {
             text = "Device Name"
@@ -296,8 +478,20 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val btnTestNotif = Button(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "Send Test Notification to Mac"
+            setOnClickListener {
+                sendTestNotificationToMac()
+            }
+            val topPad = (8 * resources.displayMetrics.density).toInt()
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = topPad
+            }
+            layoutParams = lp
+        }
+
         val txtInfo = TextView(this).apply {
-            text = "Bonjour: _nacmac._tcp. • Port: 52840\nVersion: 0.2.0 • Nactore (nactore.com)"
+            text = "Bonjour: _nacmac._tcp. • Port: 52840\nVersion: 1.0.0 • Nactore (nactore.com)"
             textSize = 12f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
             val topPad = (14 * resources.displayMetrics.density).toInt()
@@ -308,10 +502,10 @@ class MainActivity : AppCompatActivity() {
         layout.addView(editDeviceName)
         layout.addView(txtThemeLabel)
         layout.addView(btnSwitchTheme)
+        layout.addView(btnTestNotif)
         layout.addView(txtInfo)
 
         AlertDialog.Builder(this)
-            .setTitle("NacMac Settings")
             .setView(layout)
             .setPositiveButton("Save") { _, _ ->
                 val newName = editDeviceName.text.toString().trim()
@@ -388,13 +582,54 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPairingDialog() {
-        val input = EditText(this)
-        input.hint = "Paste Pairing Payload JSON from Mac"
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (18 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad / 2)
+        }
+
+        // Header with Logo
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            val bottomPad = (10 * resources.displayMetrics.density).toInt()
+            setPadding(0, 0, 0, bottomPad)
+        }
+        val imgLogo = ImageView(this).apply {
+            setImageResource(R.drawable.ic_nacmac_logo)
+            val sz = (36 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                marginEnd = (10 * resources.displayMetrics.density).toInt()
+            }
+            contentDescription = "NacMac"
+        }
+        val txtTitle = TextView(this).apply {
+            text = "Pair with Mac"
+            textSize = 17f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        header.addView(imgLogo)
+        header.addView(txtTitle)
+        layout.addView(header)
+
+        val txtDesc = TextView(this).apply {
+            text = "Position your camera over the QR code on your Mac, or paste the pairing payload JSON below:"
+            textSize = 13f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+            val bottomPad = (8 * resources.displayMetrics.density).toInt()
+            setPadding(0, 0, 0, bottomPad)
+        }
+        layout.addView(txtDesc)
+
+        val input = EditText(this).apply {
+            hint = "Paste Pairing Payload JSON from Mac"
+            textSize = 13f
+        }
+        layout.addView(input)
 
         AlertDialog.Builder(this)
-            .setTitle("Pair with Mac")
-            .setMessage("Position your camera over the QR code on your Mac, or paste the pairing payload JSON below:")
-            .setView(input)
+            .setView(layout)
             .setPositiveButton("Pair") { _, _ ->
                 val text = input.text.toString().trim()
                 val payload = PairingQRPayload.fromJSON(text)
@@ -411,6 +646,7 @@ class MainActivity : AppCompatActivity() {
                     )
                     Toast.makeText(this, "Paired with ${payload.macName}!", Toast.LENGTH_SHORT).show()
                     connectionManager.startAutoConnect()
+                    checkAndPromptNotificationAccess()
                 } else {
                     Toast.makeText(this, "Invalid pairing payload format", Toast.LENGTH_SHORT).show()
                 }
@@ -450,6 +686,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 Toast.makeText(this, "Paired with ${payload.macName}!", Toast.LENGTH_SHORT).show()
                 connectionManager.startAutoConnect()
+                checkAndPromptNotificationAccess()
             }
         }
         

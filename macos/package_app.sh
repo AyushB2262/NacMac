@@ -7,7 +7,7 @@ CONTENTS="$APP_DIR/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 
-echo "[*] Building NacMac release binary (v0.2)..."
+echo "[*] Building NacMac release binary (v1.0.0)..."
 cd "$DIR"
 
 # Ensure SDK compatibility
@@ -55,9 +55,9 @@ cat << 'EOF' > "$CONTENTS/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.2.0</string>
+    <string>1.0.0</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>3</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>

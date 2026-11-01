@@ -217,13 +217,8 @@ public struct DashboardView: View {
                         .frame(width: 30, height: 30)
                         .cornerRadius(6)
                 }
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("NacMac")
-                        .font(.system(size: 15, weight: .bold))
-                    Text("Continuity Bridge")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
+                Text("NacMac")
+                    .font(.system(size: 15, weight: .bold))
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 12)

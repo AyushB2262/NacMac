@@ -97,6 +97,22 @@ public struct NotificationPayload: Codable, Sendable {
         self.timestamp = timestamp
         self.hasReplyAction = hasReplyAction
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, packageName, appName, title, body, iconBase64, timestamp, hasReplyAction
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.packageName = (try? container.decodeIfPresent(String.self, forKey: .packageName)) ?? ""
+        self.appName = (try? container.decodeIfPresent(String.self, forKey: .appName)) ?? "Android"
+        self.title = (try? container.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        self.body = (try? container.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        self.iconBase64 = try? container.decodeIfPresent(String.self, forKey: .iconBase64)
+        self.timestamp = (try? container.decodeIfPresent(Int64.self, forKey: .timestamp)) ?? Int64(Date().timeIntervalSince1970)
+        self.hasReplyAction = (try? container.decodeIfPresent(Bool.self, forKey: .hasReplyAction)) ?? false
+    }
 }
 
 public struct NotificationDismissPayload: Codable, Sendable {

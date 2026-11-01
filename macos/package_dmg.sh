@@ -3,7 +3,7 @@ set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$DIR/NacMac.app"
-DMG_NAME="NacMac-v0.2.dmg"
+DMG_NAME="NacMac-v1.0.0.dmg"
 OUTPUT_DMG="$DIR/$DMG_NAME"
 ROOT_DMG="$DIR/../$DMG_NAME"
 STAGING_DIR="/tmp/nacmac_dmg_staging_$$"

@@ -1,10 +1,13 @@
 package com.nactore.nacmac.service
 
 import android.app.Notification
+import android.content.ComponentName
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Build
+import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Base64
@@ -19,19 +22,74 @@ import java.io.ByteArrayOutputStream
 class NacMacNotificationListener : NotificationListenerService() {
     private val TAG = "NacMac-NotifListener"
 
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        Log.i(TAG, "Notification listener connected to Android system")
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        Log.w(TAG, "Notification listener disconnected from Android system")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try {
+                requestRebind(ComponentName(this, NacMacNotificationListener::class.java))
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to request rebind: ${e.message}")
+            }
+        }
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         super.onNotificationPosted(sbn)
 
         val pkg = sbn.packageName
-        // Ignore self notifications and persistent ongoing services
+        // Ignore NacMac self notifications and persistent ongoing services
         if (pkg == packageName || sbn.isOngoing) return
 
-        val extras = sbn.notification.extras ?: return
-        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
-            ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
+        val extras = sbn.notification.extras
 
-        if (title.isEmpty() && text.isEmpty()) return
+        // Robust Title Extraction
+        var title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim()
+        if (title.isNullOrEmpty()) {
+            title = extras?.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()?.trim()
+        }
+        if (title.isNullOrEmpty()) {
+            title = extras?.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()?.trim()
+        }
+
+        // Robust Body / Text Extraction (covers standard, BigText, Inbox, and MessagingStyle)
+        var text = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim()
+        if (text.isNullOrEmpty()) {
+            text = extras?.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim()
+        }
+        if (text.isNullOrEmpty()) {
+            val lines = extras?.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+            if (!lines.isNullOrEmpty()) {
+                text = lines.filterNotNull().joinToString("\n").trim()
+            }
+        }
+        if (text.isNullOrEmpty()) {
+            // Android MessagingStyle messages (WhatsApp, Signal, Telegram, Google Messages)
+            val messages = extras?.get("android.messages")
+            if (messages is Array<*> && messages.isNotEmpty()) {
+                val lastMsg = messages.lastOrNull()
+                if (lastMsg is Bundle) {
+                    text = lastMsg.getCharSequence("text")?.toString()?.trim()
+                    if (title.isNullOrEmpty()) {
+                        title = lastMsg.getCharSequence("sender")?.toString()?.trim()
+                    }
+                }
+            }
+        }
+        if (text.isNullOrEmpty()) {
+            text = extras?.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.trim()
+        }
+        if (text.isNullOrEmpty()) {
+            text = extras?.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString()?.trim()
+        }
+        if (text.isNullOrEmpty()) {
+            text = sbn.notification.tickerText?.toString()?.trim()
+        }
 
         val pm = applicationContext.packageManager
         val appName = try {
@@ -41,7 +99,18 @@ class NacMacNotificationListener : NotificationListenerService() {
             pkg
         }
 
-        // Extract app icon
+        if (title.isNullOrEmpty()) {
+            title = appName
+        }
+
+        val body = text ?: ""
+
+        // Discard if both title equals appName and body is completely empty with no ticker
+        if (title == appName && body.isEmpty() && sbn.notification.tickerText == null) {
+            return
+        }
+
+        // Extract app icon as compact 96x96 PNG base64
         val iconBase64 = try {
             val drawable = pm.getApplicationIcon(pkg)
             bitmapToBase64(drawableToBitmap(drawable))
@@ -62,7 +131,7 @@ class NacMacNotificationListener : NotificationListenerService() {
             packageName = pkg,
             appName = appName,
             title = title,
-            body = text,
+            body = body,
             iconBase64 = iconBase64,
             timestamp = sbn.postTime / 1000,
             hasReplyAction = hasReply
@@ -70,7 +139,7 @@ class NacMacNotificationListener : NotificationListenerService() {
 
         val envelope = NacMacEnvelope(NacMacMessageType.NOTIFICATION, payload.toJSON().toString())
         ConnectionManager.getInstance(applicationContext).sendEnvelope(envelope)
-        Log.d(TAG, "Forwarded notification: [$appName] $title: $text")
+        Log.i(TAG, "Forwarded notification: [$appName] $title: $body")
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
@@ -85,15 +154,14 @@ class NacMacNotificationListener : NotificationListenerService() {
 
     private fun drawableToBitmap(drawable: Drawable): Bitmap {
         if (drawable is BitmapDrawable && drawable.bitmap != null) {
-            return drawable.bitmap
+            val src = drawable.bitmap
+            if (src.width <= 96 && src.height <= 96) return src
+            return Bitmap.createScaledBitmap(src, 96, 96, true)
         }
-        val bitmap = Bitmap.createBitmap(
-            drawable.intrinsicWidth.coerceAtLeast(64).coerceAtMost(128),
-            drawable.intrinsicHeight.coerceAtLeast(64).coerceAtMost(128),
-            Bitmap.Config.ARGB_8888
-        )
+        val size = 96
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.setBounds(0, 0, size, size)
         drawable.draw(canvas)
         return bitmap
     }

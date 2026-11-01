@@ -449,9 +449,12 @@
 
         <!-- Section: Notification Mirroring -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardNotificationMirroring"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="14dp"
+            android:clickable="true"
+            android:focusable="true"
             app:cardCornerRadius="20dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/border_card"
@@ -479,6 +482,7 @@
                         android:textStyle="bold" />
 
                     <TextView
+                        android:id="@+id/txtNotifStatus"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="All phone notifications mirror live to Mac"
@@ -493,7 +497,7 @@
                     android:layout_height="wrap_content"
                     android:layout_alignParentEnd="true"
                     android:layout_centerVertical="true"
-                    android:checked="true" />
+                    android:checked="false" />
             </RelativeLayout>
         </com.google.android.material.card.MaterialCardView>
 

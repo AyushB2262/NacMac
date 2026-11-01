@@ -257,9 +257,13 @@ public final class NetworkServer: @unchecked Sendable {
                 print("[NacMac-Security] Blocked unauthorized .notification from unauthenticated connection")
                 return
             }
-            if let payloadData = envelope.payload.data(using: .utf8),
-               let notif = try? JSONDecoder().decode(NotificationPayload.self, from: payloadData) {
-                NotificationManager.shared.deliverNotification(notif)
+            if let payloadData = envelope.payload.data(using: .utf8) {
+                do {
+                    let notif = try JSONDecoder().decode(NotificationPayload.self, from: payloadData)
+                    NotificationManager.shared.deliverNotification(notif)
+                } catch {
+                    print("[NacMac-Notification] Error decoding notification payload: \(error)")
+                }
             }
             
         case .notificationDismissed:
@@ -267,9 +271,13 @@ public final class NetworkServer: @unchecked Sendable {
                 print("[NacMac-Security] Blocked unauthorized .notificationDismissed from unauthenticated connection")
                 return
             }
-            if let payloadData = envelope.payload.data(using: .utf8),
-               let dismiss = try? JSONDecoder().decode(NotificationDismissPayload.self, from: payloadData) {
-                NotificationManager.shared.dismissNotification(id: dismiss.id)
+            if let payloadData = envelope.payload.data(using: .utf8) {
+                do {
+                    let dismiss = try JSONDecoder().decode(NotificationDismissPayload.self, from: payloadData)
+                    NotificationManager.shared.dismissNotification(id: dismiss.id)
+                } catch {
+                    print("[NacMac-Notification] Error decoding dismiss payload: \(error)")
+                }
             }
             
         case .fileStart:

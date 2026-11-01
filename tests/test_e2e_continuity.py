@@ -295,7 +295,7 @@ def run_tests():
         s2.close()
 
         print("\n" + "=" * 65)
-        print("ALL 6 TESTS PASSED SUCCESSFULLY! Version 0.1 Deliverables Verified.")
+        print("ALL 6 TESTS PASSED SUCCESSFULLY! Version 1.0.0 Deliverables Verified.")
         print("=" * 65)
 
     finally:
