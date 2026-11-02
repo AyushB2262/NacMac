@@ -16,8 +16,6 @@ public enum NacMacMessageType: String, Codable, Sendable {
     case error = "ERROR"
 }
 
-public typealias LMMMessageType = NacMacMessageType
-
 // MARK: - Top-Level Protocol Envelope
 public struct NacMacEnvelope: Codable, Sendable {
     public let type: NacMacMessageType
@@ -28,8 +26,6 @@ public struct NacMacEnvelope: Codable, Sendable {
         self.payload = payload
     }
 }
-
-public typealias LMMEnvelope = NacMacEnvelope
 
 // MARK: - Pairing Payloads
 public struct PairingQRPayload: Codable, Sendable {

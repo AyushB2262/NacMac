@@ -16,7 +16,6 @@ class DiscoveryClient(
     private val TAG = "NacMac-Discovery"
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
     private val primaryServiceType = "_nacmac._tcp."
-    private val legacyServiceType = "_linkmymac._tcp."
     private var isDiscovering = false
 
     private val discoveryListener = object : NsdManager.DiscoveryListener {
@@ -26,7 +25,7 @@ class DiscoveryClient(
 
         override fun onServiceFound(serviceInfo: NsdServiceInfo) {
             Log.d(TAG, "mDNS service found: ${serviceInfo.serviceName}")
-            if (serviceInfo.serviceType.contains("nacmac") || serviceInfo.serviceType.contains("linkmymac")) {
+            if (serviceInfo.serviceType.contains("nacmac")) {
                 nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                     override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                         Log.e(TAG, "Resolve failed for service: $errorCode")

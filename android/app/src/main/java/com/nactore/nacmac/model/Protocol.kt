@@ -21,8 +21,6 @@ enum class NacMacMessageType(val rawValue: String) {
     }
 }
 
-typealias LMMMessageType = NacMacMessageType
-
 data class NacMacEnvelope(
     val type: NacMacMessageType,
     val payload: String
@@ -47,8 +45,6 @@ data class NacMacEnvelope(
         }
     }
 }
-
-typealias LMMEnvelope = NacMacEnvelope
 
 data class PairingQRPayload(
     val macId: String,

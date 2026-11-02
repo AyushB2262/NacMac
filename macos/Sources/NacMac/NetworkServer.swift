@@ -22,7 +22,6 @@ public final class NetworkServer: @unchecked Sendable {
     private var activeConnection: NWConnection?
     private var isConnectionAuthenticated: Bool = false
     private var netService: NetService?
-    private var legacyNetService: NetService?
     private let queue = DispatchQueue(label: "com.nactore.nacmac.network.server", qos: .userInitiated)
     
     private var heartbeatTimer: DispatchSourceTimer?
@@ -48,8 +47,6 @@ public final class NetworkServer: @unchecked Sendable {
             self?.listener = nil
             self?.netService?.stop()
             self?.netService = nil
-            self?.legacyNetService?.stop()
-            self?.legacyNetService = nil
             self?.updateState(.disconnected)
         }
     }
@@ -109,7 +106,6 @@ public final class NetworkServer: @unchecked Sendable {
     private func advertiseBonjour() {
         let name = Host.current().localizedName ?? "NacMac"
         netService = NetService(domain: "local.", type: "_nacmac._tcp.", name: name, port: Int32(port.rawValue))
-        legacyNetService = NetService(domain: "local.", type: "_linkmymac._tcp.", name: name, port: Int32(port.rawValue))
         
         let txtDict: [String: Data] = [
             "macId": PairingManager.shared.macId.data(using: .utf8) ?? Data(),
@@ -118,10 +114,7 @@ public final class NetworkServer: @unchecked Sendable {
         let recordData = NetService.data(fromTXTRecord: txtDict)
         netService?.setTXTRecord(recordData)
         netService?.publish()
-        
-        legacyNetService?.setTXTRecord(recordData)
-        legacyNetService?.publish()
-        print("[NacMac-Network] Bonjour services published: _nacmac._tcp & _linkmymac._tcp on port \(port)")
+        print("[NacMac-Network] Bonjour service published: _nacmac._tcp on port \(port)")
     }
     
     // MARK: - Handling Inbound Connections

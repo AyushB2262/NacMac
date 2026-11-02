@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-End-to-End Continuity & Protocol Verification Suite for LinkMyMac
+End-to-End Continuity & Protocol Verification Suite for NacMac
 Tests:
   1. Pairing Handshake (QR payload extraction -> PAIR_REQUEST -> PAIR_RESPONSE)
   2. Heartbeat & Keepalive (PING -> PONG)
@@ -65,8 +65,7 @@ def run_tests():
         os.path.join(repo_dir, "macos/NacMac.app/Contents/MacOS/NacMac"),
         os.path.join(repo_dir, "macos/.build/release/NacMac"),
         os.path.join(repo_dir, "macos/.build/arm64-apple-macosx/release/NacMac"),
-        os.path.join(repo_dir, "macos/.build/debug/NacMac"),
-        os.path.join(repo_dir, "macos/.build/debug/LinkMyMac")
+        os.path.join(repo_dir, "macos/.build/debug/NacMac")
     ]
     bin_path = next((p for p in candidates if os.path.exists(p)), None)
     if not bin_path:
@@ -199,7 +198,7 @@ def run_tests():
             "packageName": "com.whatsapp",
             "appName": "WhatsApp",
             "title": "Alex Chen",
-            "body": "Hey, is the LinkMyMac continuity bridge ready?",
+            "body": "Hey, is the NacMac continuity bridge ready?",
             "timestamp": int(time.time()),
             "hasReplyAction": True
         }
@@ -248,10 +247,8 @@ def run_tests():
         })
         time.sleep(1.0)
 
-        # Verify file arrived on Mac in ~/Downloads/NacMac (or ~/Downloads/LinkMyMac)
+        # Verify file arrived on Mac in ~/Downloads/NacMac
         dest_path = os.path.expanduser(f"~/Downloads/NacMac/{test_filename}")
-        if not os.path.exists(dest_path):
-            dest_path = os.path.expanduser(f"~/Downloads/LinkMyMac/{test_filename}")
         assert os.path.exists(dest_path), f"Transferred file not found at {dest_path}"
         with open(dest_path, "rb") as f:
             received_bytes = f.read()
@@ -283,8 +280,6 @@ def run_tests():
         time.sleep(0.5)
         # Verify part file was purged
         part_path = os.path.expanduser(f"~/Downloads/NacMac/{cancel_filename}.part")
-        if not os.path.exists(part_path):
-            part_path = os.path.expanduser(f"~/Downloads/LinkMyMac/{cancel_filename}.part")
         assert not os.path.exists(part_path), "Cancelled .part file was not cleaned up!"
         print("[PASS] Cancellation handled and partial file cleaned up successfully!")
 

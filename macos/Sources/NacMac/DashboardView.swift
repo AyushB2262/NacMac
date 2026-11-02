@@ -210,7 +210,8 @@ public struct DashboardView: View {
             Spacer().frame(height: 24)
             
             HStack(spacing: 10) {
-                if let logoImg = NSImage(contentsOf: Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/nacmac-logo.png")) ?? NSImage(contentsOfFile: "/Users/ayush/LMM-REA/Logo/nacmac-logo.png") {
+                if let logoImg = Bundle.main.url(forResource: "nacmac-logo", withExtension: "png").flatMap({ NSImage(contentsOf: $0) })
+                    ?? NSImage(contentsOf: Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/nacmac-logo.png")) {
                     Image(nsImage: logoImg)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
