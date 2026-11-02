@@ -3,6 +3,8 @@ package com.nactore.nacmac.data
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import com.nactore.nacmac.model.TransferRecord
+import org.json.JSONArray
 import java.util.UUID
 
 data class PairedMac(
@@ -69,4 +71,28 @@ class DeviceStore(context: Context) {
 
     val isPaired: Boolean
         get() = prefs.contains("mac_id") && prefs.contains("mac_secret")
+
+    fun getRecentTransfers(): List<TransferRecord> {
+        val jsonArrStr = prefs.getString("recent_transfers_json", null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(jsonArrStr)
+            (0 until arr.length()).mapNotNull { TransferRecord.fromJSON(arr.getString(it)) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun addRecentTransfer(record: TransferRecord) {
+        val current = getRecentTransfers().toMutableList()
+        current.removeAll { it.id == record.id }
+        current.add(0, record)
+        val trimmed = current.take(15)
+        val arr = JSONArray()
+        trimmed.forEach { arr.put(it.toJSON().toString()) }
+        prefs.edit().putString("recent_transfers_json", arr.toString()).apply()
+    }
+
+    fun clearRecentTransfers() {
+        prefs.edit().remove("recent_transfers_json").apply()
+    }
 }

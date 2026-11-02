@@ -10,6 +10,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.view.HapticFeedbackConstants
@@ -32,12 +33,14 @@ import com.nactore.nacmac.model.NacMacEnvelope
 import com.nactore.nacmac.model.NacMacMessageType
 import com.nactore.nacmac.model.NotificationPayload
 import com.nactore.nacmac.model.PairingQRPayload
+import com.nactore.nacmac.model.TransferRecord
 import com.nactore.nacmac.network.ConnectionManager
 import com.nactore.nacmac.network.ConnectionStatus
 import com.nactore.nacmac.service.NacMacBackgroundService
 import com.nactore.nacmac.service.NacMacNotificationListener
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -51,31 +54,24 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchAutoConnect: SwitchCompat
     private lateinit var btnScanQR: Button
     private lateinit var btnSendFile: Button
-    private lateinit var txtTransferItemName: TextView
-    private lateinit var progressTransfer: ProgressBar
-    private lateinit var txtTransferSpeed: TextView
     private lateinit var switchNotifMirroring: SwitchCompat
     private lateinit var txtNotifStatus: TextView
     private lateinit var cardNotificationMirroring: View
 
+    // Transfer Views
+    private lateinit var layoutActiveTransfer: View
+    private lateinit var txtTransferItemName: TextView
+    private lateinit var progressTransfer: ProgressBar
+    private lateinit var txtTransferSpeed: TextView
+    private lateinit var txtNoTransfers: TextView
+    private lateinit var layoutTransfersList: LinearLayout
+    private lateinit var layoutIntegrityBadge: View
+    private lateinit var btnClearTransfers: TextView
+
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             Toast.makeText(this, "Sending file to Mac...", Toast.LENGTH_SHORT).show()
-            txtTransferItemName.text = "Sending selected file..."
-            progressTransfer.visibility = View.VISIBLE
-            progressTransfer.progress = 0
-            
-            connectionManager.fileTransferWorker?.sendFileToMac(it) { percent ->
-                runOnUiThread {
-                    progressTransfer.progress = percent
-                    txtTransferItemName.text = "Sending file... $percent%"
-                    txtTransferSpeed.text = "Streaming chunks"
-                    if (percent >= 100) {
-                        txtTransferItemName.text = "Sent - SHA-256 Verified"
-                        txtTransferSpeed.text = "Complete"
-                    }
-                }
-            }
+            connectionManager.fileTransferWorker?.sendFileToMac(it)
         }
     }
 
@@ -136,6 +132,7 @@ class MainActivity : AppCompatActivity() {
         startBackgroundService()
         handleIncomingShareIntent(intent)
         observeConnection()
+        observeTransfers()
     }
 
     override fun onResume() {
@@ -151,12 +148,19 @@ class MainActivity : AppCompatActivity() {
         switchAutoConnect = findViewById(R.id.switchAutoConnect)
         btnScanQR = findViewById(R.id.btnScanQR)
         btnSendFile = findViewById(R.id.btnSendFile)
-        txtTransferItemName = findViewById(R.id.txtTransferItemName)
-        progressTransfer = findViewById(R.id.progressTransfer)
-        txtTransferSpeed = findViewById(R.id.txtTransferSpeed)
         switchNotifMirroring = findViewById(R.id.switchNotifMirroring)
         txtNotifStatus = findViewById(R.id.txtNotifStatus)
         cardNotificationMirroring = findViewById(R.id.cardNotificationMirroring)
+
+        // Transfer views
+        layoutActiveTransfer = findViewById(R.id.layoutActiveTransfer)
+        txtTransferItemName = findViewById(R.id.txtTransferItemName)
+        progressTransfer = findViewById(R.id.progressTransfer)
+        txtTransferSpeed = findViewById(R.id.txtTransferSpeed)
+        txtNoTransfers = findViewById(R.id.txtNoTransfers)
+        layoutTransfersList = findViewById(R.id.layoutTransfersList)
+        layoutIntegrityBadge = findViewById(R.id.layoutIntegrityBadge)
+        btnClearTransfers = findViewById(R.id.btnClearTransfers)
 
         val isNight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         findViewById<ImageView>(R.id.btnThemeToggle)?.setImageResource(
@@ -379,6 +383,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        btnClearTransfers.setOnClickListener {
+            connectionManager.fileTransferWorker?.clearHistory()
+        }
+
         findViewById<View>(R.id.btnHelp)?.applyApplePressEffect {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://nactore.com"))
             startActivity(intent)
@@ -571,6 +579,145 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun observeTransfers() {
+        val worker = connectionManager.fileTransferWorker ?: return
+
+        // 1. Observe active transfers (both sending and receiving)
+        lifecycleScope.launch {
+            worker.activeTransfer.collectLatest { active ->
+                if (active != null) {
+                    layoutActiveTransfer.visibility = View.VISIBLE
+                    txtTransferItemName.text = if (active.isIncoming) {
+                        "Receiving ${active.filename}..."
+                    } else {
+                        "Sending ${active.filename}..."
+                    }
+                    progressTransfer.progress = active.percent
+                    txtTransferSpeed.text = "${active.percent}% • ${if (active.isIncoming) "Incoming from Mac" else "Streaming to Mac"}"
+                } else {
+                    layoutActiveTransfer.visibility = View.GONE
+                }
+            }
+        }
+
+        // 2. Observe recent transfers list (sent & received history)
+        lifecycleScope.launch {
+            worker.recentTransfers.collectLatest { transfers ->
+                renderRecentTransfers(transfers)
+            }
+        }
+    }
+
+    private fun renderRecentTransfers(transfers: List<TransferRecord>) {
+        layoutTransfersList.removeAllViews()
+        if (transfers.isEmpty()) {
+            txtNoTransfers.visibility = View.VISIBLE
+            layoutIntegrityBadge.visibility = View.GONE
+            btnClearTransfers.visibility = View.GONE
+            return
+        }
+
+        txtNoTransfers.visibility = View.GONE
+        layoutIntegrityBadge.visibility = View.VISIBLE
+        btnClearTransfers.visibility = View.VISIBLE
+
+        for (record in transfers) {
+            val itemView = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                val padV = (8 * resources.displayMetrics.density).toInt()
+                setPadding(0, padV, 0, padV)
+            }
+
+            // Direction icon
+            val icon = ImageView(this).apply {
+                val iconRes = if (record.isIncoming) {
+                    android.R.drawable.stat_sys_download_done
+                } else {
+                    android.R.drawable.stat_sys_upload_done
+                }
+                setImageResource(iconRes)
+                val tintColor = if (record.isIncoming) 0xFF15803D.toInt() else 0xFFEA580C.toInt()
+                setColorFilter(tintColor)
+                val sz = (22 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                    marginEnd = (10 * resources.displayMetrics.density).toInt()
+                }
+            }
+
+            val textLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+            }
+
+            val txtName = TextView(this).apply {
+                text = record.name
+                textSize = 13.5f
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+
+            val txtSub = TextView(this).apply {
+                val dirStr = if (record.isIncoming) "Received from Mac" else "Sent to Mac"
+                val sizeStr = if (record.sizeBytes > 0) " • ${formatFileSize(record.sizeBytes)}" else ""
+                text = "(Verified) • $dirStr$sizeStr"
+                textSize = 11.5f
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+            }
+
+            textLayout.addView(txtName)
+            textLayout.addView(txtSub)
+
+            // Right checkmark badge
+            val checkBadge = TextView(this).apply {
+                text = "✔"
+                textSize = 13f
+                setTextColor(0xFF15803D.toInt())
+                val pad = (4 * resources.displayMetrics.density).toInt()
+                setPadding(pad, pad, pad, pad)
+            }
+
+            itemView.addView(icon)
+            itemView.addView(textLayout)
+            itemView.addView(checkBadge)
+
+            if (record.isIncoming) {
+                itemView.applyApplePressEffect {
+                    openDownloadsFolder()
+                }
+            }
+
+            layoutTransfersList.addView(itemView)
+        }
+    }
+
+    private fun formatFileSize(bytes: Long): String {
+        if (bytes <= 0) return ""
+        if (bytes < 1024) return "$bytes B"
+        val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
+        val pre = "KMGTPE"[exp - 1]
+        return String.format("%.1f %sB", bytes / Math.pow(1024.0, exp.toDouble()), pre)
+    }
+
+    private fun openDownloadsFolder() {
+        val downloadDir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "NacMac"
+        )
+        if (!downloadDir.exists()) downloadDir.mkdirs()
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(Uri.parse(downloadDir.absolutePath), "*/*")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Files saved in Downloads/NacMac", Toast.LENGTH_SHORT).show()
         }
     }
 

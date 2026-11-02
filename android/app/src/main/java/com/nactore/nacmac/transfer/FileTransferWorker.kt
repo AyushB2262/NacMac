@@ -10,13 +10,25 @@ import android.provider.OpenableColumns
 import android.util.Base64
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.nactore.nacmac.data.DeviceStore
 import com.nactore.nacmac.model.*
 import com.nactore.nacmac.network.ConnectionManager
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+
+data class ActiveTransferState(
+    val transferId: String,
+    val filename: String,
+    val bytesTransferred: Long,
+    val totalBytes: Long,
+    val isIncoming: Boolean,
+    val percent: Int
+)
 
 class FileTransferWorker(
     private val context: Context,
@@ -24,8 +36,18 @@ class FileTransferWorker(
 ) {
     private val TAG = "NacMac-FileTransfer"
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val deviceStore = DeviceStore(context)
+
     private val activeTransfers = mutableMapOf<String, FileOutputStream>()
     private val transferFiles = mutableMapOf<String, Pair<File, File>>() // transferId -> (partFile, finalFile)
+    private val incomingSizes = mutableMapOf<String, Long>()
+    private val incomingBytes = mutableMapOf<String, Long>()
+
+    private val _activeTransfer = MutableStateFlow<ActiveTransferState?>(null)
+    val activeTransfer: StateFlow<ActiveTransferState?> = _activeTransfer
+
+    private val _recentTransfers = MutableStateFlow<List<TransferRecord>>(deviceStore.getRecentTransfers())
+    val recentTransfers: StateFlow<List<TransferRecord>> = _recentTransfers
 
     init {
         createChannel()
@@ -83,6 +105,18 @@ class FileTransferWorker(
             val fos = FileOutputStream(partFile)
             activeTransfers[start.transferId] = fos
             transferFiles[start.transferId] = Pair(partFile, finalFile)
+            incomingSizes[start.transferId] = start.size
+            incomingBytes[start.transferId] = 0L
+
+            _activeTransfer.value = ActiveTransferState(
+                transferId = start.transferId,
+                filename = start.filename,
+                bytesTransferred = 0L,
+                totalBytes = start.size,
+                isIncoming = true,
+                percent = 0
+            )
+
             Log.d(TAG, "Started receiving file: ${start.filename} (${start.size} bytes)")
         } catch (e: Exception) {
             Log.e(TAG, "Error starting file receive: ${e.message}")
@@ -94,6 +128,16 @@ class FileTransferWorker(
         try {
             val data = Base64.decode(chunk.dataBase64, Base64.NO_WRAP)
             fos.write(data)
+
+            val current = (incomingBytes[chunk.transferId] ?: 0L) + data.size
+            incomingBytes[chunk.transferId] = current
+            val total = incomingSizes[chunk.transferId] ?: 0L
+            val percent = if (total > 0) ((current.toDouble() / total) * 100).toInt().coerceIn(0, 100) else 0
+
+            _activeTransfer.value = _activeTransfer.value?.copy(
+                bytesTransferred = current,
+                percent = percent
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Error writing chunk: ${e.message}")
         }
@@ -102,6 +146,8 @@ class FileTransferWorker(
     private fun finishReceiving(transferId: String) {
         val fos = activeTransfers.remove(transferId) ?: return
         val files = transferFiles.remove(transferId) ?: return
+        val totalSize = incomingSizes.remove(transferId) ?: 0L
+        incomingBytes.remove(transferId)
 
         try {
             fos.flush()
@@ -111,7 +157,20 @@ class FileTransferWorker(
             if (finalFile.exists()) finalFile.delete()
             partFile.renameTo(finalFile)
 
-            Log.d(TAG, "File successfully received: ${finalFile.name}")
+            _activeTransfer.value = null
+
+            // Record completed received transfer in persistent history
+            val record = TransferRecord(
+                id = transferId,
+                name = finalFile.name,
+                sizeBytes = if (totalSize > 0) totalSize else finalFile.length(),
+                isIncoming = true,
+                timestamp = System.currentTimeMillis()
+            )
+            deviceStore.addRecentTransfer(record)
+            _recentTransfers.value = deviceStore.getRecentTransfers()
+
+            Log.d(TAG, "File successfully received and recorded: ${finalFile.name}")
 
             // Show download notification
             val notif = NotificationCompat.Builder(context, "nacmac_transfers")
@@ -131,6 +190,9 @@ class FileTransferWorker(
     private fun cancelReceiving(transferId: String) {
         val fos = activeTransfers.remove(transferId)
         val files = transferFiles.remove(transferId)
+        incomingSizes.remove(transferId)
+        incomingBytes.remove(transferId)
+        _activeTransfer.value = null
         try {
             fos?.close()
             files?.first?.delete()
@@ -160,6 +222,15 @@ class FileTransferWorker(
 
             val inputStream = resolver.openInputStream(uri) ?: return@launch
 
+            _activeTransfer.value = ActiveTransferState(
+                transferId = transferId,
+                filename = filename,
+                bytesTransferred = 0L,
+                totalBytes = fileSize,
+                isIncoming = false,
+                percent = 0
+            )
+
             // 1. Send FILE_START
             val startPayload = FileStartPayload(transferId, filename, fileSize)
             connectionManager.sendEnvelope(
@@ -181,10 +252,17 @@ class FileTransferWorker(
                 )
 
                 offset += bytesRead
-                if (fileSize > 0) {
-                    val percent = ((offset.toDouble() / fileSize) * 100).toInt()
-                    onProgress(percent)
+                val percent = if (fileSize > 0) {
+                    ((offset.toDouble() / fileSize) * 100).toInt().coerceIn(0, 100)
+                } else {
+                    0
                 }
+
+                _activeTransfer.value = _activeTransfer.value?.copy(
+                    bytesTransferred = offset,
+                    percent = percent
+                )
+                onProgress(percent)
                 yield() // Cooperative yield without blocking thread execution
             }
 
@@ -198,8 +276,27 @@ class FileTransferWorker(
             connectionManager.sendEnvelope(
                 NacMacEnvelope(NacMacMessageType.FILE_END, endObj.toString())
             )
+
+            _activeTransfer.value = null
+
+            // Record completed sent transfer in persistent history
+            val record = TransferRecord(
+                id = transferId,
+                name = filename,
+                sizeBytes = offset,
+                isIncoming = false,
+                timestamp = System.currentTimeMillis()
+            )
+            deviceStore.addRecentTransfer(record)
+            _recentTransfers.value = deviceStore.getRecentTransfers()
+
             onProgress(100)
-            Log.d(TAG, "Finished sending $filename ($offset bytes)")
+            Log.d(TAG, "Finished sending and recorded $filename ($offset bytes)")
         }
+    }
+
+    fun clearHistory() {
+        deviceStore.clearRecentTransfers()
+        _recentTransfers.value = emptyList()
     }
 }

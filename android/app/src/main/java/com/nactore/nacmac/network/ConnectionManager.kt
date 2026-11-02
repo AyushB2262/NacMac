@@ -40,6 +40,12 @@ class ConnectionManager private constructor(private val context: Context) {
     private var heartbeatJob: Job? = null
 
     var fileTransferWorker: FileTransferWorker? = null
+        get() {
+            if (field == null) {
+                field = FileTransferWorker(context, this)
+            }
+            return field
+        }
 
     companion object {
         @Volatile

@@ -362,3 +362,42 @@ data class FileAckPayload(
         }
     }
 }
+
+data class TransferRecord(
+    val id: String,
+    val name: String,
+    val sizeBytes: Long,
+    val isIncoming: Boolean, // true = Received from Mac, false = Sent to Mac
+    val timestamp: Long = System.currentTimeMillis(),
+    val isCompleted: Boolean = true
+) {
+    fun toJSON(): JSONObject {
+        val obj = JSONObject()
+        obj.put("id", id)
+        obj.put("name", name)
+        obj.put("sizeBytes", sizeBytes)
+        obj.put("isIncoming", isIncoming)
+        obj.put("timestamp", timestamp)
+        obj.put("isCompleted", isCompleted)
+        return obj
+    }
+
+    companion object {
+        fun fromJSON(jsonString: String): TransferRecord? {
+            return try {
+                val obj = JSONObject(jsonString)
+                TransferRecord(
+                    id = obj.getString("id"),
+                    name = obj.getString("name"),
+                    sizeBytes = obj.optLong("sizeBytes", 0),
+                    isIncoming = obj.getBoolean("isIncoming"),
+                    timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
+                    isCompleted = obj.optBoolean("isCompleted", true)
+                )
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+}
+

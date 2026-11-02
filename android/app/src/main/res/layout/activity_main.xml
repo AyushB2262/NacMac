@@ -390,6 +390,7 @@
 
         <!-- Section: Recent Transfers (Separate Card Below File Hub) -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardRecentTransfers"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
@@ -405,45 +406,116 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Recent Transfers"
-                    android:textColor="@color/text_primary"
-                    android:textSize="15sp"
-                    android:textStyle="bold"
-                    android:layout_marginBottom="8dp" />
-
-                <!-- Active Transfer Item Name -->
-                <TextView
-                    android:id="@+id/txtTransferItemName"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="No active transfers"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp" />
-
-                <!-- Progress Bar -->
-                <ProgressBar
-                    android:id="@+id/progressTransfer"
-                    style="?android:attr/progressBarStyleHorizontal"
+                <RelativeLayout
                     android:layout_width="match_parent"
-                    android:layout_height="8dp"
-                    android:progress="0"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentStart="true"
+                        android:layout_centerVertical="true"
+                        android:text="Recent Transfers"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnClearTransfers"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:layout_centerVertical="true"
+                        android:text="Clear History"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
+                        android:padding="4dp"
+                        android:visibility="gone" />
+                </RelativeLayout>
+
+                <!-- Active Transfer Progress View (Visible during active send/receive) -->
+                <LinearLayout
+                    android:id="@+id/layoutActiveTransfer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
                     android:visibility="gone"
-                    android:progressTint="@color/color_primary"
-                    android:layout_marginTop="8dp" />
+                    android:layout_marginBottom="10dp"
+                    android:background="@drawable/bg_badge_rounded"
+                    android:padding="12dp">
 
-                <!-- Speed / Status -->
+                    <TextView
+                        android:id="@+id/txtTransferItemName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Transferring..."
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <ProgressBar
+                        android:id="@+id/progressTransfer"
+                        style="?android:attr/progressBarStyleHorizontal"
+                        android:layout_width="match_parent"
+                        android:layout_height="6dp"
+                        android:progress="0"
+                        android:progressTint="@color/color_primary"
+                        android:layout_marginTop="6dp" />
+
+                    <TextView
+                        android:id="@+id/txtTransferSpeed"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="end"
+                        android:text="0%"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp"
+                        android:layout_marginTop="3dp" />
+                </LinearLayout>
+
+                <!-- Empty State -->
                 <TextView
-                    android:id="@+id/txtTransferSpeed"
+                    android:id="@+id/txtNoTransfers"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="end"
-                    android:text=""
+                    android:text="No transfers yet. Send or receive files seamlessly."
                     android:textColor="@color/text_secondary"
-                    android:textSize="11sp"
-                    android:layout_marginTop="4dp" />
+                    android:textSize="12sp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp" />
+
+                <!-- Dynamic Container for Recent Transferred Items (Both Sent & Received) -->
+                <LinearLayout
+                    android:id="@+id/layoutTransfersList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <!-- Bottom Integrity Badge (matches Mac) -->
+                <LinearLayout
+                    android:id="@+id/layoutIntegrityBadge"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:background="@drawable/bg_badge_rounded"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
+                    android:layout_marginTop="10dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="✔ Integrity Check: SHA-256 Verified"
+                        android:textColor="@color/badge_text"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
