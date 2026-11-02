@@ -76,6 +76,26 @@
             android:foregroundServiceType="connectedDevice"
             android:exported="false" />
 
+        <!-- FileProvider for secure, scoped sharing of downloaded files with external viewer apps -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Broadcast receiver for notification action buttons (e.g. Open Downloads Folder) -->
+        <receiver
+            android:name=".service.NotificationActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.nactore.nacmac.ACTION_OPEN_FOLDER" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

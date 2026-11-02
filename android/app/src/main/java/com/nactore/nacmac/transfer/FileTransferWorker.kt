@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import com.nactore.nacmac.data.DeviceStore
 import com.nactore.nacmac.model.*
 import com.nactore.nacmac.network.ConnectionManager
+import com.nactore.nacmac.util.FileUtils
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -90,11 +91,7 @@ class FileTransferWorker(
     }
 
     private fun startReceiving(start: FileStartPayload) {
-        val downloadDir = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "NacMac"
-        )
-        downloadDir.mkdirs()
+        val downloadDir = FileUtils.getDownloadsDirectory()
 
         val finalFile = File(downloadDir, start.filename)
         val partFile = File(downloadDir, "${start.filename}.part")
@@ -172,12 +169,18 @@ class FileTransferWorker(
 
             Log.d(TAG, "File successfully received and recorded: ${finalFile.name}")
 
-            // Show download notification
+            // Show download notification with direct file opening and folder action
+            val openPendingIntent = FileUtils.createOpenFilePendingIntent(context, finalFile, transferId.hashCode())
+            val folderPendingIntent = FileUtils.createOpenFolderPendingIntent(context, transferId.hashCode() + 1)
+
             val notif = NotificationCompat.Builder(context, "nacmac_transfers")
                 .setContentTitle("File Received from Mac")
-                .setContentText("${finalFile.name} saved to Downloads/NacMac")
+                .setContentText("${finalFile.name} • Tap to open")
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentIntent(openPendingIntent)
+                .addAction(android.R.drawable.ic_menu_agenda, "Open Folder", folderPendingIntent)
                 .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .build()
 
             val manager = context.getSystemService(NotificationManager::class.java)
@@ -292,6 +295,18 @@ class FileTransferWorker(
 
             onProgress(100)
             Log.d(TAG, "Finished sending and recorded $filename ($offset bytes)")
+
+            // Show sent notification
+            val folderPendingIntent = FileUtils.createOpenFolderPendingIntent(context, transferId.hashCode() + 1)
+            val sentNotif = NotificationCompat.Builder(context, "nacmac_transfers")
+                .setContentTitle("File Sent to Mac")
+                .setContentText("$filename sent successfully")
+                .setSmallIcon(android.R.drawable.stat_sys_upload_done)
+                .setContentIntent(folderPendingIntent)
+                .setAutoCancel(true)
+                .build()
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.notify(transferId.hashCode(), sentNotif)
         }
     }
 

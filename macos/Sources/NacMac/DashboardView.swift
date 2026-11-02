@@ -72,13 +72,15 @@ final class DashboardState: ObservableObject {
     }
     
     func addNotification(from payload: NotificationPayload) {
+        let isFile = payload.packageName == "com.nactore.nacmac.file" || payload.filePath != nil
         let item = MirroredNotifItem(
             id: payload.id,
             app: payload.appName,
             sender: payload.title,
             body: payload.body,
-            icon: payload.packageName.contains("whatsapp") ? "message.fill" : "bell.fill",
-            canReply: payload.hasReplyAction
+            icon: isFile ? "doc.fill" : (payload.packageName.contains("whatsapp") ? "message.fill" : "bell.fill"),
+            canReply: payload.hasReplyAction,
+            filePath: payload.filePath
         )
         notifications.removeAll { $0.id == payload.id }
         notifications.insert(item, at: 0)
@@ -88,7 +90,7 @@ final class DashboardState: ObservableObject {
     func sendFile(at url: URL) {
         NetworkServer.shared.sendFile(at: url)
         let name = url.lastPathComponent
-        completedTransfers.insert(CompletedTransfer(name: name, sizeString: "Ready", direction: "Sent"), at: 0)
+        completedTransfers.insert(CompletedTransfer(name: name, sizeString: "Ready", direction: "Sent", filePath: url.path), at: 0)
         addLog("Initiated file transfer: \(name)", type: "info")
     }
     
@@ -103,6 +105,14 @@ struct CompletedTransfer: Identifiable {
     let name: String
     let sizeString: String
     let direction: String
+    let filePath: String?
+    
+    init(name: String, sizeString: String, direction: String, filePath: String? = nil) {
+        self.name = name
+        self.sizeString = sizeString
+        self.direction = direction
+        self.filePath = filePath
+    }
 }
 
 struct MirroredNotifItem: Identifiable {
@@ -112,6 +122,17 @@ struct MirroredNotifItem: Identifiable {
     let body: String
     let icon: String
     let canReply: Bool
+    let filePath: String?
+    
+    init(id: String, app: String, sender: String, body: String, icon: String, canReply: Bool, filePath: String? = nil) {
+        self.id = id
+        self.app = app
+        self.sender = sender
+        self.body = body
+        self.icon = icon
+        self.canReply = canReply
+        self.filePath = filePath
+    }
 }
 
 struct ActivityLogEntry: Identifiable {
@@ -527,9 +548,31 @@ public struct DashboardView: View {
     // MARK: - Transfer Queue Card
     private var transferQueueCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Transfer Queue")
-                .font(.system(size: 14, weight: .semibold))
-                .tracking(-0.2)
+            HStack {
+                Text("Transfer Queue")
+                    .font(.system(size: 14, weight: .semibold))
+                    .tracking(-0.2)
+                
+                Spacer()
+                
+                Button(action: {
+                    let dir = FileTransferManager.shared.downloadDirectory
+                    NSWorkspace.shared.open(dir)
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 10))
+                        Text("Open Downloads")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(DashboardView.nacmacOrange.opacity(0.12))
+                    .foregroundColor(DashboardView.nacmacOrange)
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+            }
             
             VStack(alignment: .leading, spacing: 12) {
                 if state.activeTransfer == nil && state.completedTransfers.isEmpty {
@@ -574,20 +617,36 @@ public struct DashboardView: View {
                     }
                     
                     ForEach(state.completedTransfers) { item in
-                        HStack(spacing: 8) {
-                            Image(systemName: "doc.fill")
-                                .foregroundColor(.green)
-                                .font(.system(size: 14))
-                            
-                            Text("\(item.name) (\(item.sizeString)) - \(item.direction)")
-                                .font(.system(size: 12, weight: .regular))
-                            
-                            Spacer()
-                            
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                                .font(.system(size: 14))
+                        Button(action: {
+                            if let path = item.filePath, FileManager.default.fileExists(atPath: path) {
+                                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                            } else {
+                                NSWorkspace.shared.open(FileTransferManager.shared.downloadDirectory)
+                            }
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: item.direction == "Received" ? "arrow.down.doc.fill" : "arrow.up.doc.fill")
+                                    .foregroundColor(.green)
+                                    .font(.system(size: 14))
+                                
+                                Text("\(item.name) (\(item.sizeString)) - \(item.direction)")
+                                    .font(.system(size: 12, weight: .regular))
+                                    .lineLimit(1)
+                                
+                                Spacer()
+                                
+                                Image(systemName: "folder")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 11))
+                                
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.system(size: 14))
+                            }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .help("Click to reveal in Finder")
                     }
                 }
                 
@@ -659,59 +718,69 @@ public struct DashboardView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(state.notifications) { notif in
-                            HStack(alignment: .top, spacing: 10) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(Color.accentColor.opacity(0.15))
-                                        .frame(width: 34, height: 34)
-                                    Image(systemName: notif.icon)
-                                        .foregroundColor(.accentColor)
-                                        .font(.system(size: 15))
+                            Button(action: {
+                                if let path = notif.filePath, FileManager.default.fileExists(atPath: path) {
+                                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                                } else if notif.app == "NacMac" && (notif.sender.contains("File") || notif.body.contains("saved to Downloads")) {
+                                    NSWorkspace.shared.open(FileTransferManager.shared.downloadDirectory)
                                 }
-                                
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack {
-                                        Text(notif.app)
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(1)
-                                        Spacer()
-                                        Button(action: {
-                                            state.dismissNotification(id: notif.id)
-                                        }) {
-                                            Image(systemName: "xmark")
-                                                .font(.system(size: 9, weight: .bold))
+                            }) {
+                                HStack(alignment: .top, spacing: 10) {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(DashboardView.nacmacOrange.opacity(0.15))
+                                            .frame(width: 34, height: 34)
+                                        Image(systemName: notif.icon)
+                                            .foregroundColor(DashboardView.nacmacOrange)
+                                            .font(.system(size: 15))
+                                    }
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack {
+                                            Text(notif.app)
+                                                .font(.system(size: 11, weight: .bold))
                                                 .foregroundColor(.secondary)
-                                                .padding(4)
-                                                .background(Color.gray.opacity(0.15))
-                                                .clipShape(Circle())
+                                                .lineLimit(1)
+                                            Spacer()
+                                            Button(action: {
+                                                state.dismissNotification(id: notif.id)
+                                            }) {
+                                                Image(systemName: "xmark")
+                                                    .font(.system(size: 9, weight: .bold))
+                                                    .foregroundColor(.secondary)
+                                                    .padding(4)
+                                                    .background(Color.gray.opacity(0.15))
+                                                    .clipShape(Circle())
+                                            }
+                                            .buttonStyle(.plain)
                                         }
-                                        .buttonStyle(.plain)
+                                        
+                                        if !notif.sender.isEmpty && notif.sender != notif.app {
+                                            Text(notif.sender)
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundColor(.primary)
+                                                .lineLimit(1)
+                                        }
+                                        
+                                        Text(notif.body)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(2)
+                                            .fixedSize(horizontal: false, vertical: true)
                                     }
-                                    
-                                    if !notif.sender.isEmpty && notif.sender != notif.app {
-                                        Text(notif.sender)
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundColor(.primary)
-                                            .lineLimit(1)
-                                    }
-                                    
-                                    Text(notif.body)
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(2)
-                                        .fixedSize(horizontal: false, vertical: true)
                                 }
+                                .padding(10)
+                                .frame(width: 260)
+                                .background(Color(NSColor.controlBackgroundColor))
+                                .cornerRadius(12)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                                )
+                                .shadow(color: Color.black.opacity(appearanceMode == "dark" ? 0.22 : 0.04), radius: 8, x: 0, y: 3)
+                                .contentShape(Rectangle())
                             }
-                            .padding(10)
-                            .frame(width: 260)
-                            .background(Color(NSColor.controlBackgroundColor))
-                            .cornerRadius(12)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-                            )
-                            .shadow(color: Color.black.opacity(appearanceMode == "dark" ? 0.22 : 0.04), radius: 8, x: 0, y: 3)
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.vertical, 2)
@@ -773,25 +842,49 @@ public struct DashboardView: View {
                 .frame(height: 180)
             
             VStack(alignment: .leading, spacing: 10) {
-                Text("Transferred Files History")
-                    .font(.system(size: 14, weight: .semibold))
+                HStack {
+                    Text("Transferred Files History")
+                        .font(.system(size: 14, weight: .semibold))
+                    Spacer()
+                    if !state.completedTransfers.isEmpty {
+                        Button("Clear History") {
+                            state.completedTransfers.removeAll()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    }
+                }
                 
                 List {
                     ForEach(state.completedTransfers) { item in
-                        HStack {
-                            Image(systemName: "doc")
-                            Text(item.name)
-                                .fontWeight(.medium)
-                            Spacer()
-                            Text(item.sizeString)
-                                .foregroundColor(.secondary)
-                            Text(item.direction)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.accentColor.opacity(0.1))
-                                .cornerRadius(4)
+                        Button(action: {
+                            if let path = item.filePath, FileManager.default.fileExists(atPath: path) {
+                                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                            } else {
+                                NSWorkspace.shared.open(FileTransferManager.shared.downloadDirectory)
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: item.direction == "Received" ? "arrow.down.doc.fill" : "arrow.up.doc.fill")
+                                    .foregroundColor(DashboardView.nacmacOrange)
+                                Text(item.name)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text(item.sizeString)
+                                    .foregroundColor(.secondary)
+                                Text(item.direction)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(DashboardView.nacmacOrange.opacity(0.12))
+                                    .foregroundColor(DashboardView.nacmacOrange)
+                                    .cornerRadius(4)
+                            }
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
                         }
-                        .padding(.vertical, 4)
+                        .buttonStyle(.plain)
+                        .help("Click to reveal in Finder")
                     }
                 }
                 .listStyle(.inset)
@@ -825,27 +918,43 @@ public struct DashboardView: View {
             
             List {
                 ForEach(state.notifications) { notif in
-                    HStack(spacing: 12) {
-                        Image(systemName: notif.icon)
-                            .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(Color.green)
-                            .cornerRadius(8)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(notif.app)
-                                .font(.system(size: 13, weight: .bold))
-                            Text("\(notif.sender): \(notif.body)")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
+                    Button(action: {
+                        if let path = notif.filePath, FileManager.default.fileExists(atPath: path) {
+                            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                        } else if notif.app == "NacMac" && (notif.sender.contains("File") || notif.body.contains("saved to Downloads")) {
+                            NSWorkspace.shared.open(FileTransferManager.shared.downloadDirectory)
                         }
-                        Spacer()
-                        Button("Dismiss") {
-                            state.dismissNotification(id: notif.id)
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: notif.icon)
+                                .foregroundColor(.white)
+                                .frame(width: 32, height: 32)
+                                .background(DashboardView.nacmacOrange)
+                                .cornerRadius(8)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(notif.app)
+                                    .font(.system(size: 13, weight: .bold))
+                                Text("\(notif.sender): \(notif.body)")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            if notif.filePath != nil {
+                                Image(systemName: "folder")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 13))
+                            }
+                            Button("Dismiss") {
+                                state.dismissNotification(id: notif.id)
+                            }
+                            .buttonStyle(.bordered)
                         }
-                        .buttonStyle(.bordered)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.vertical, 6)
+                    .buttonStyle(.plain)
+                    .help("Click to view in Finder")
                 }
             }
             .listStyle(.inset)

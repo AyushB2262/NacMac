@@ -135,7 +135,8 @@ public final class FileTransferManager: @unchecked Sendable {
                 packageName: "com.nactore.nacmac.file",
                 appName: "NacMac",
                 title: "File Received",
-                body: "\(entry.targetURL.lastPathComponent) saved to Downloads"
+                body: "\(entry.targetURL.lastPathComponent) saved to Downloads",
+                filePath: entry.targetURL.path
             )
             NotificationManager.shared.deliverNotification(notif)
             return true

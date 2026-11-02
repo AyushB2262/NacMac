@@ -268,8 +268,9 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
             let dir = isReceiving ? "Received" : "Sent"
             self.transferMenuItem.title = "✓ \(dir): \(filename)"
             DashboardState.shared.activeTransfer = nil
+            let path = isReceiving ? FileTransferManager.shared.downloadDirectory.appendingPathComponent(filename).path : nil
             DashboardState.shared.completedTransfers.insert(
-                CompletedTransfer(name: filename, sizeString: "Verified", direction: dir),
+                CompletedTransfer(name: filename, sizeString: "Verified", direction: dir, filePath: path),
                 at: 0
             )
         }

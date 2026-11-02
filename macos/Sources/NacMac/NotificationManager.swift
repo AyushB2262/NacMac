@@ -32,10 +32,54 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         completionHandler([.banner, .sound, .badge, .list])
     }
     
+    // UNUserNotificationCenterDelegate banner click action
+    public func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        handleNotificationAction(userInfo: userInfo)
+        completionHandler()
+    }
+    
     // NSUserNotificationCenterDelegate to display banner even when active
     @available(macOS, deprecated: 11.0, message: "Legacy fallback")
     public func userNotificationCenter(_ center: NSUserNotificationCenter, shouldPresent notification: NSUserNotification) -> Bool {
         return true
+    }
+
+    @available(macOS, deprecated: 11.0, message: "Legacy fallback")
+    public func userNotificationCenter(_ center: NSUserNotificationCenter, didActivate notification: NSUserNotification) {
+        if let userInfo = notification.userInfo {
+            handleNotificationAction(userInfo: userInfo)
+        }
+    }
+
+    private func handleNotificationAction(userInfo: [AnyHashable: Any]) {
+        if let filePath = userInfo["filePath"] as? String, !filePath.isEmpty {
+            let fileURL = URL(fileURLWithPath: filePath)
+            if FileManager.default.fileExists(atPath: filePath) {
+                NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+                return
+            } else {
+                let folder = fileURL.hasDirectoryPath ? fileURL : fileURL.deletingLastPathComponent()
+                if FileManager.default.fileExists(atPath: folder.path) {
+                    NSWorkspace.shared.open(folder)
+                    return
+                }
+            }
+        }
+
+        // Fallback: open NacMac Downloads directory
+        if let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
+            let nacmacDir = downloads.appendingPathComponent("NacMac")
+            if FileManager.default.fileExists(atPath: nacmacDir.path) {
+                NSWorkspace.shared.open(nacmacDir)
+            } else {
+                NSWorkspace.shared.open(downloads)
+            }
+        }
     }
     
     public func requestAuthorization() {
@@ -67,7 +111,7 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         }
         
         guard hasBundle else {
-            fallbackDisplay(title: displayTitle, body: bodyText)
+            fallbackDisplay(title: displayTitle, body: bodyText, filePath: payload.filePath)
             print("[NacMac-Notification] Delivered native banner for: \(appName) - \(titleText)")
             return
         }
@@ -77,6 +121,12 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         content.body = bodyText
         content.sound = .default
         content.threadIdentifier = payload.packageName
+        if let filePath = payload.filePath, !filePath.isEmpty {
+            content.userInfo = ["filePath": filePath]
+        } else if payload.packageName == "com.nactore.nacmac.file" {
+            let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.appendingPathComponent("NacMac").path ?? ""
+            content.userInfo = ["filePath": downloads]
+        }
         
         if let iconBase64 = payload.iconBase64,
            let iconData = Data(base64Encoded: iconBase64) {
@@ -111,12 +161,15 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
     }
     
     @available(macOS, deprecated: 11.0, message: "Legacy fallback")
-    public func fallbackDisplay(title: String, body: String) {
+    public func fallbackDisplay(title: String, body: String, filePath: String? = nil) {
         DispatchQueue.main.async {
             let notif = NSUserNotification()
             notif.title = title
             notif.informativeText = body
             notif.soundName = NSUserNotificationDefaultSoundName
+            if let filePath = filePath {
+                notif.userInfo = ["filePath": filePath]
+            }
             NSUserNotificationCenter.default.deliver(notif)
         }
     }

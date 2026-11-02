@@ -82,8 +82,9 @@ public struct NotificationPayload: Codable, Sendable {
     public let iconBase64: String?
     public let timestamp: Int64
     public let hasReplyAction: Bool
+    public let filePath: String?
     
-    public init(id: String, packageName: String, appName: String, title: String, body: String, iconBase64: String? = nil, timestamp: Int64 = Int64(Date().timeIntervalSince1970), hasReplyAction: Bool = false) {
+    public init(id: String, packageName: String, appName: String, title: String, body: String, iconBase64: String? = nil, timestamp: Int64 = Int64(Date().timeIntervalSince1970), hasReplyAction: Bool = false, filePath: String? = nil) {
         self.id = id
         self.packageName = packageName
         self.appName = appName
@@ -92,10 +93,11 @@ public struct NotificationPayload: Codable, Sendable {
         self.iconBase64 = iconBase64
         self.timestamp = timestamp
         self.hasReplyAction = hasReplyAction
+        self.filePath = filePath
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, packageName, appName, title, body, iconBase64, timestamp, hasReplyAction
+        case id, packageName, appName, title, body, iconBase64, timestamp, hasReplyAction, filePath
     }
 
     public init(from decoder: Decoder) throws {
@@ -108,6 +110,7 @@ public struct NotificationPayload: Codable, Sendable {
         self.iconBase64 = try? container.decodeIfPresent(String.self, forKey: .iconBase64)
         self.timestamp = (try? container.decodeIfPresent(Int64.self, forKey: .timestamp)) ?? Int64(Date().timeIntervalSince1970)
         self.hasReplyAction = (try? container.decodeIfPresent(Bool.self, forKey: .hasReplyAction)) ?? false
+        self.filePath = try? container.decodeIfPresent(String.self, forKey: .filePath)
     }
 }
 

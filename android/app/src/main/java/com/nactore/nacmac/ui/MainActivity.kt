@@ -38,6 +38,7 @@ import com.nactore.nacmac.network.ConnectionManager
 import com.nactore.nacmac.network.ConnectionStatus
 import com.nactore.nacmac.service.NacMacBackgroundService
 import com.nactore.nacmac.service.NacMacNotificationListener
+import com.nactore.nacmac.util.FileUtils
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.File
@@ -138,6 +139,8 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateNotificationMirroringUI()
+        renderRecentTransfers(deviceStore.getRecentTransfers())
+        observeTransfers()
     }
 
     private fun initViews() {
@@ -383,8 +386,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        btnClearTransfers.setOnClickListener {
+        btnClearTransfers.applyApplePressEffect {
+            deviceStore.clearRecentTransfers()
             connectionManager.fileTransferWorker?.clearHistory()
+            renderRecentTransfers(emptyList())
+            Toast.makeText(this, "Transfer history cleared", Toast.LENGTH_SHORT).show()
+        }
+
+        findViewById<View>(R.id.btnOpenFolder)?.applyApplePressEffect {
+            FileUtils.openDownloadsFolder(this)
         }
 
         findViewById<View>(R.id.btnHelp)?.applyApplePressEffect {
@@ -583,6 +593,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun observeTransfers() {
+        // Immediate sync from persistent device store
+        renderRecentTransfers(deviceStore.getRecentTransfers())
+
         val worker = connectionManager.fileTransferWorker ?: return
 
         // 1. Observe active transfers (both sending and receiving)
@@ -606,7 +619,11 @@ class MainActivity : AppCompatActivity() {
         // 2. Observe recent transfers list (sent & received history)
         lifecycleScope.launch {
             worker.recentTransfers.collectLatest { transfers ->
-                renderRecentTransfers(transfers)
+                if (transfers.isNotEmpty()) {
+                    renderRecentTransfers(transfers)
+                } else {
+                    renderRecentTransfers(deviceStore.getRecentTransfers())
+                }
             }
         }
     }
@@ -688,7 +705,16 @@ class MainActivity : AppCompatActivity() {
 
             if (record.isIncoming) {
                 itemView.applyApplePressEffect {
-                    openDownloadsFolder()
+                    val targetFile = File(FileUtils.getDownloadsDirectory(), record.name)
+                    if (targetFile.exists()) {
+                        FileUtils.openFile(this@MainActivity, targetFile)
+                    } else {
+                        FileUtils.openDownloadsFolder(this@MainActivity)
+                    }
+                }
+            } else {
+                itemView.applyApplePressEffect {
+                    FileUtils.openDownloadsFolder(this@MainActivity)
                 }
             }
 
@@ -702,23 +728,6 @@ class MainActivity : AppCompatActivity() {
         val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
         val pre = "KMGTPE"[exp - 1]
         return String.format("%.1f %sB", bytes / Math.pow(1024.0, exp.toDouble()), pre)
-    }
-
-    private fun openDownloadsFolder() {
-        val downloadDir = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "NacMac"
-        )
-        if (!downloadDir.exists()) downloadDir.mkdirs()
-        try {
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(Uri.parse(downloadDir.absolutePath), "*/*")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            startActivity(intent)
-        } catch (_: Exception) {
-            Toast.makeText(this, "Files saved in Downloads/NacMac", Toast.LENGTH_SHORT).show()
-        }
     }
 
     private fun updateDisconnectedUI() {
