@@ -18,49 +18,49 @@
 </h3>
 
 <p align="center">
-  <a href="#-download--quick-start"><b>Download v1.0.0</b></a> ·
-  <a href="#-see-it-work"><b>See It Work</b></a> ·
-  <a href="#-features"><b>Features</b></a> ·
-  <a href="#-how-it-works"><b>How It Works</b></a> ·
-  <a href="#-building-from-source"><b>Build from Source</b></a> ·
+  <a href="#download--quick-start"><b>Download v1.0.0</b></a> ·
+  <a href="#see-it-work"><b>See It Work</b></a> ·
+  <a href="#features"><b>Features</b></a> ·
+  <a href="#the-philosophy"><b>The Philosophy</b></a> ·
+  <a href="#architecture--wire-protocol"><b>Architecture</b></a> ·
+  <a href="#building-from-source"><b>Build from Source</b></a> ·
   <a href="docs/SPECIFICATION.md"><b>Protocol Spec</b></a>
 </p>
 
 ---
 
-## 💡 The Philosophy
+## Download & Quick Start
 
-Apple built AirDrop, Universal Clipboard, and Notification Mirroring to keep Mac users tightly locked into the iPhone ecosystem. Windows built Link to Windows for Android users.
+### macOS Workstation (macOS 13.0+)
+1. Download **`NacMac-v1.0.0.dmg`** from the [Releases](https://github.com/AyushB2262/NacMac/releases) page.
+2. Open the disk image and drag **NacMac.app** into `/Applications`.
+3. Launch NacMac. It will appear in your Menu Bar with an amber indicator dot.
 
-**If you love macOS for work but carry an Android phone in your pocket, you’ve been left behind.**
-
-Until now, the only choices have been sluggish Bluetooth transfers, proprietary cloud-relay tools that harvest metadata, or browser web-uploaders that route your private camera photos through third-party servers.
-
-**NacMac is the native peer-to-peer bridge built for privacy, speed, and simplicity.** It is guided by four non-negotiable principles:
-
-1. **100% Local-First:** No accounts, no subscriptions, no cloud relays, no tracking. Communication stays strictly on your local Wi-Fi via high-throughput TCP sockets (`port 52840`).
-2. **Zero-Configuration Discovery:** Pair once in five seconds with an ephemeral dynamic QR code. After that, Bonjour / mDNS (`_nacmac._tcp.local`) silently re-establishes connections whenever you sit down at your desk.
-3. **High-Throughput Streaming:** 256 KB framed chunked streaming with live speed calculation, mid-stream cancellation, and cryptographic SHA-256 integrity verification.
-4. **Native Ergonomics:** Crafted native from the ground up — Swift 6, AppKit, and SwiftUI on macOS; Kotlin, Jetpack Compose, and Material 3 on Android. No Electron, no browser engines, no memory bloat.
+> [!NOTE]
+> **First-time launch (macOS Gatekeeper):** Because open-source community builds are not notarized through an Apple Developer subscription, macOS may prompt an unidentified developer warning. You can clear the quarantine attribute with a single command in Terminal:
+> ```bash
+> xattr -dr com.apple.quarantine /Applications/NacMac.app
+> ```
 
 ---
 
-## ⚡ Comparison: Why NacMac?
-
-| Capability | NacMac | AirDroid / Cloud Apps | Quick Share (Windows) | Bluetooth Obex |
-| :--- | :---: | :---: | :---: | :---: |
-| **Data Leaves Local Network** | **Never (0% Cloud)** | Yes (Cloud servers) | Varies | No |
-| **Account / Sign-In Required** | **None** | Mandatory | Google/Samsung | No |
-| **macOS Native App** | **Swift 6 & SwiftUI** | Web / Electron | ❌ No Mac client | Native system |
-| **Android Native App** | **Kotlin & Material 3** | Java / Mixed | Samsung / Google only | Native |
-| **Transfer Speed** | **Wi-Fi LAN Speed (50–100+ MB/s)** | Capped by Internet / Tier | LAN speed | ~200 KB/s (Painful) |
-| **Integrity Verification** | **SHA-256 Cryptographic Hash** | Varies | Proprietary | Checksum only |
-| **Notification Mirroring** | **Native macOS Banners** | Web Popups | ❌ Windows only | ❌ None |
-| **Open Source** | **MIT Licensed** | Proprietary | Proprietary | Open standard |
+### Android Companion (Android 8.0+)
+1. Download **`NacMac-v1.0.0.apk`** from the [Releases](https://github.com/AyushB2262/NacMac/releases) page.
+2. Install the APK on your phone (enable *"Install unknown apps"* if prompted).
+3. Open NacMac and grant the necessary permissions:
+   - **Notification Access:** Allows NacMac to mirror alerts to your Mac.
+   - **Camera:** Used strictly to scan the pairing QR code.
 
 ---
 
-## 📸 See It Work
+### Pair in 5 Seconds
+1. Click the **NacMac** icon in your macOS Menu Bar or open the Dashboard to display the dynamic QR code.
+2. In the Android app, tap **Scan QR Code**.
+3. Point your camera at your Mac screen. The devices will handshake and show **Secure & Online** immediately.
+
+---
+
+## See It Work
 
 ### 1. macOS Workstation Dashboard & Menu Bar Hub
 A minimal, dark-mode native dashboard providing instant visibility into paired devices, real-time file transfer queues with SHA-256 verification badges, and mirrored notifications:
@@ -70,7 +70,7 @@ A minimal, dark-mode native dashboard providing instant visibility into paired d
 </p>
 
 - **Menu Bar Status Item:** Resides silently in your Mac's menu bar with live connection dots, QR popover, and drag-and-drop file target.
-- **File Transfer & Progress Hub:** Drag and drop files from Finder directly onto the hub or menu bar icon to blast them to Android.
+- **File Transfer & Progress Hub:** Drag and drop files from Finder directly onto the hub or menu bar icon to send them to Android.
 - **Cryptographic Verification:** Every completed transfer undergoes automated SHA-256 validation before reaching your `~/Downloads/NacMac` folder.
 
 ---
@@ -93,9 +93,9 @@ Built with Android Material 3 and modern dark slate styling, offering single-tap
 
 ---
 
-## ✨ Features
+## Features
 
-- [x] **Lightning P2P File Transfers:** Stream files of any size over your local Wi-Fi. Files are chunked into 256 KB binary payloads with live speed metrics (MB/s), visual progress, and cancellation support.
+- [x] **High-Speed P2P File Transfers:** Stream files of any size over your local Wi-Fi. Files are chunked into 256 KB binary payloads with live speed metrics (MB/s), visual progress, and cancellation support.
 - [x] **Cryptographic SHA-256 Verification:** Source computes the SHA-256 digest during transmission; receiver validates the hash upon completion to guarantee zero corrupted bytes.
 - [x] **Real-Time Notification Mirroring:** Intercepts notifications on Android (including `MessagingStyle`, `BigTextStyle`, and app icons) and renders them as native macOS system notification banners.
 - [x] **Bidirectional Dismissal:** Dismissing a mirrored notification on macOS syncs back to Android immediately.
@@ -103,11 +103,43 @@ Built with Android Material 3 and modern dark slate styling, offering single-tap
 - [x] **Background Auto-Reconnection:** Android's low-power foreground service automatically re-establishes connection whenever your phone wakes or re-joins your home network.
 - [x] **Universal Clipboard Sync:** Automatically synchronizes clipboard text between Mac and Android with debounced change listeners.
 - [x] **Strictly Local & Offline:** No internet connection required. Operates seamlessly on local home Wi-Fi, office networks, or mobile Wi-Fi hotspots.
-- [x] **"Preem" Visual Identity:** High-contrast, sleek design system featuring Deep Slate (`#0F172A`), Ice White (`#F8FAFC`), and warm Amber accents (`#F97316`).
+- [x] **Adaptive Dark and Light Interface:** High-contrast design system featuring Deep Slate (`#0F172A`), Ice White (`#F8FAFC`), and warm Amber accents (`#F97316`).
 
 ---
 
-## 🛠️ Architecture & Wire Protocol
+## The Philosophy
+
+Apple built AirDrop, Universal Clipboard, and Notification Mirroring to keep Mac users locked into the iPhone ecosystem. Windows built Link to Windows for Android users.
+
+**If you love macOS for work but carry an Android phone in your pocket, you have been left behind.**
+
+Until now, the only choices have been sluggish Bluetooth transfers, proprietary cloud-relay tools that harvest metadata, or browser web-uploaders that route your private camera photos through third-party servers.
+
+**NacMac is the native peer-to-peer bridge built for privacy, speed, and simplicity.** It is guided by four principles:
+
+1. **100% Local-First:** No accounts, no subscriptions, no cloud relays, no tracking. Communication stays strictly on your local Wi-Fi via high-throughput TCP sockets (`port 52840`).
+2. **Zero-Configuration Discovery:** Pair once in five seconds with an ephemeral dynamic QR code. After that, Bonjour / mDNS (`_nacmac._tcp.local`) silently re-establishes connections whenever you sit down at your desk.
+3. **High-Throughput Streaming:** 256 KB framed chunked streaming with live speed calculation, mid-stream cancellation, and cryptographic SHA-256 integrity verification.
+4. **Native Ergonomics:** Crafted native from the ground up — Swift 6, AppKit, and SwiftUI on macOS; Kotlin, Jetpack Compose, and Material 3 on Android. No Electron, no browser engines, no memory bloat.
+
+---
+
+## Comparison: Why NacMac?
+
+| Capability | NacMac | AirDroid / Cloud Apps | Quick Share (Windows) | Bluetooth Obex |
+| :--- | :---: | :---: | :---: | :---: |
+| **Data Leaves Local Network** | **Never (0% Cloud)** | Yes (Cloud servers) | Varies | No |
+| **Account / Sign-In Required** | **None** | Mandatory | Google/Samsung | No |
+| **macOS Native App** | **Swift 6 & SwiftUI** | Web / Electron | Not Available | Native system |
+| **Android Native App** | **Kotlin & Material 3** | Java / Mixed | Samsung / Google only | Native |
+| **Transfer Speed** | **Wi-Fi LAN Speed (50–100+ MB/s)** | Capped by Internet / Tier | LAN speed | ~200 KB/s (Painful) |
+| **Integrity Verification** | **SHA-256 Cryptographic Hash** | Varies | Proprietary | Checksum only |
+| **Notification Mirroring** | **Native macOS Banners** | Web Popups | Windows only | Not Available |
+| **Open Source** | **MIT Licensed** | Proprietary | Proprietary | Open standard |
+
+---
+
+## Architecture & Wire Protocol
 
 Communication occurs directly between the macOS daemon and Android companion across a persistent TCP connection on **port 52840**.
 
@@ -160,38 +192,7 @@ Every transmission is framed with a 4-byte big-endian unsigned length prefix, fo
 
 ---
 
-## 🚀 Download & Quick Start
-
-### macOS Workstation (macOS 13.0+)
-1. Download **`NacMac-v1.0.0.dmg`** from the [Releases](https://github.com/Harshil-Jani/NacMac/releases) page.
-2. Open the disk image and drag **NacMac.app** into `/Applications`.
-3. Launch NacMac. It will appear in your Menu Bar with an amber indicator dot.
-
-> [!NOTE]
-> **First-time launch (macOS Gatekeeper):** Because open-source community builds are not notarized through an Apple Developer subscription, macOS may prompt an unidentified developer warning. You can clear the quarantine attribute with a single command in Terminal:
-> ```bash
-> xattr -dr com.apple.quarantine /Applications/NacMac.app
-> ```
-
----
-
-### Android Companion (Android 8.0+)
-1. Download **`NacMac-v1.0.0.apk`** from the [Releases](https://github.com/Harshil-Jani/NacMac/releases) page.
-2. Install the APK on your phone (enable *"Install unknown apps"* if prompted).
-3. Open NacMac and grant the necessary permissions:
-   - **Notification Access:** Allows NacMac to mirror alerts to your Mac.
-   - **Camera:** Used strictly to scan the pairing QR code.
-
----
-
-### Pair in 5 Seconds
-1. Click the **NacMac** icon in your macOS Menu Bar or open the Dashboard to display the dynamic QR code.
-2. In the Android app, tap **Scan QR Code**.
-3. Point your camera at your Mac screen. The devices will handshake and show **Secure & Online** immediately!
-
----
-
-## 💻 Building from Source
+## Building from Source
 
 ### Building macOS Application
 **Prerequisites:** macOS 13.0+, Xcode Command Line Tools (`xcode-select --install`), Swift 6.0+.
@@ -231,7 +232,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ---
 
-## 🧪 Testing & Verification
+## Testing & Verification
 
 NacMac includes a headless end-to-end integration and protocol verification test suite. It validates TCP handshake mechanics, Bonjour discovery, heartbeat keep-alive, chunked file transfer with SHA-256 hashing, and notification mirroring in an isolated sandbox without altering existing paired credentials:
 
@@ -252,7 +253,7 @@ All 6 continuity test cases passed (100%).
 
 ---
 
-## ⌨️ Keyboard Shortcuts (macOS)
+## Keyboard Shortcuts (macOS)
 
 NacMac follows native macOS application conventions:
 
@@ -265,7 +266,7 @@ NacMac follows native macOS application conventions:
 
 ---
 
-## 🔒 Security & Privacy by Design
+## Security & Privacy by Design
 
 - **Zero Phoning Home:** No telemetry, no crash reporting SDKs, no external network requests.
 - **Strictly LAN-Bound:** The TCP listener binds exclusively to local network interfaces. It rejects incoming connections lacking matching dynamic authentication secrets.
@@ -274,9 +275,9 @@ NacMac follows native macOS application conventions:
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-Contributions are welcome! Whether it’s reporting bugs, improving documentation, or adding new continuity features:
+Contributions are welcome. Whether reporting issues, refining documentation, or expanding continuity features:
 
 1. Fork the repository.
 2. Create a feature branch: `git checkout -b feature/awesome-feature`
@@ -286,6 +287,6 @@ Contributions are welcome! Whether it’s reporting bugs, improving documentatio
 
 ---
 
-## 📄 License
+## License
 
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for full details.
