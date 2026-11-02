@@ -154,6 +154,16 @@ class FileTransferWorker(
             if (finalFile.exists()) finalFile.delete()
             partFile.renameTo(finalFile)
 
+            // Index in MediaStore immediately so Gallery and Photos apps know the file exists
+            try {
+                android.media.MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(finalFile.absolutePath),
+                    arrayOf(FileUtils.getMimeType(finalFile.name)),
+                    null
+                )
+            } catch (_: Exception) {}
+
             _activeTransfer.value = null
 
             // Record completed received transfer in persistent history

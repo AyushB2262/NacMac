@@ -2,8 +2,11 @@ package com.nactore.nacmac.util
 
 import android.app.DownloadManager
 import android.app.PendingIntent
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -98,6 +101,27 @@ object FileUtils {
         return dir
     }
 
+    fun grantUriPermissions(context: Context, intent: Intent, uri: Uri) {
+        try {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            val resolveList = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.queryIntentActivities(
+                    intent,
+                    PackageManager.ResolveInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.queryIntentActivities(intent, 0)
+            }
+            for (info in resolveList) {
+                val pkg = info.activityInfo.packageName
+                context.grantUriPermission(pkg, uri, flags)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "grantUriPermissions error: ${e.message}")
+        }
+    }
+
     fun openFile(context: Context, file: File): Boolean {
         if (!file.exists()) {
             Toast.makeText(context, "File does not exist: ${file.name}", Toast.LENGTH_SHORT).show()
@@ -110,13 +134,29 @@ object FileUtils {
             val uri = FileProvider.getUriForFile(context, authority, file)
             val mimeType = getMimeType(file.name)
 
+            // Index with media scanner so Gallery/Photos apps recognize the file immediately
+            try {
+                MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(file.absolutePath),
+                    arrayOf(mimeType),
+                    null
+                )
+            } catch (_: Exception) {}
+
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, mimeType)
+                clipData = ClipData.newRawUri(file.name, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
 
+            grantUriPermissions(context, intent, uri)
+
             val chooser = Intent.createChooser(intent, "Open with...").apply {
+                clipData = ClipData.newRawUri(file.name, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
@@ -186,15 +226,25 @@ object FileUtils {
         val uri = FileProvider.getUriForFile(context, authority, file)
         val mimeType = getMimeType(file.name)
 
+        // Index with media scanner so Gallery/Photos apps recognize the file immediately
+        try {
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(file.absolutePath),
+                arrayOf(mimeType),
+                null
+            )
+        } catch (_: Exception) {}
+
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mimeType)
+            clipData = ClipData.newRawUri(file.name, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
 
-        val chooser = Intent.createChooser(intent, "Open with...").apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
+        grantUriPermissions(context, intent, uri)
 
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -202,7 +252,7 @@ object FileUtils {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
 
-        return PendingIntent.getActivity(context, requestCode, chooser, flags)
+        return PendingIntent.getActivity(context, requestCode, intent, flags)
     }
 
     fun createOpenFolderPendingIntent(context: Context, requestCode: Int): PendingIntent {
