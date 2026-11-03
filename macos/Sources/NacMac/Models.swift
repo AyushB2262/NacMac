@@ -85,11 +85,37 @@ public struct NotificationActionInfo: Codable, Sendable {
     public let index: Int
     public let title: String
     public let isReply: Bool
+    public let supportsReply: Bool
     
-    public init(index: Int, title: String, isReply: Bool = false) {
+    public init(index: Int, title: String, isReply: Bool = false, supportsReply: Bool? = nil) {
         self.index = index
         self.title = title
-        self.isReply = isReply
+        let reply = supportsReply ?? isReply
+        self.isReply = reply
+        self.supportsReply = reply
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case index, title, isReply, supportsReply
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.index = try container.decode(Int.self, forKey: .index)
+        self.title = (try? container.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        let reply = (try? container.decodeIfPresent(Bool.self, forKey: .supportsReply))
+            ?? (try? container.decodeIfPresent(Bool.self, forKey: .isReply))
+            ?? false
+        self.isReply = reply
+        self.supportsReply = reply
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(index, forKey: .index)
+        try container.encode(title, forKey: .title)
+        try container.encode(isReply, forKey: .isReply)
+        try container.encode(supportsReply, forKey: .supportsReply)
     }
 }
 
@@ -102,12 +128,13 @@ public struct NotificationPayload: Codable, Sendable {
     public let iconBase64: String?
     public let timestamp: Int64
     public let hasReplyAction: Bool
+    public let supportsReply: Bool
     public let filePath: String?
     public var deviceId: String?
     public var deviceName: String?
     public let actions: [NotificationActionInfo]?
     
-    public init(id: String, packageName: String, appName: String, title: String, body: String, iconBase64: String? = nil, timestamp: Int64 = Int64(Date().timeIntervalSince1970), hasReplyAction: Bool = false, filePath: String? = nil, deviceId: String? = nil, deviceName: String? = nil, actions: [NotificationActionInfo]? = nil) {
+    public init(id: String, packageName: String, appName: String, title: String, body: String, iconBase64: String? = nil, timestamp: Int64 = Int64(Date().timeIntervalSince1970), hasReplyAction: Bool = false, supportsReply: Bool? = nil, filePath: String? = nil, deviceId: String? = nil, deviceName: String? = nil, actions: [NotificationActionInfo]? = nil) {
         self.id = id
         self.packageName = packageName
         self.appName = appName
@@ -115,7 +142,9 @@ public struct NotificationPayload: Codable, Sendable {
         self.body = body
         self.iconBase64 = iconBase64
         self.timestamp = timestamp
-        self.hasReplyAction = hasReplyAction
+        let canReply = supportsReply ?? hasReplyAction
+        self.hasReplyAction = canReply
+        self.supportsReply = canReply
         self.filePath = filePath
         self.deviceId = deviceId
         self.deviceName = deviceName
@@ -123,7 +152,7 @@ public struct NotificationPayload: Codable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, packageName, appName, title, body, iconBase64, timestamp, hasReplyAction, filePath, deviceId, deviceName, actions
+        case id, packageName, appName, title, body, iconBase64, timestamp, hasReplyAction, supportsReply, filePath, deviceId, deviceName, actions
     }
 
     public init(from decoder: Decoder) throws {
@@ -135,11 +164,32 @@ public struct NotificationPayload: Codable, Sendable {
         self.body = (try? container.decodeIfPresent(String.self, forKey: .body)) ?? ""
         self.iconBase64 = try? container.decodeIfPresent(String.self, forKey: .iconBase64)
         self.timestamp = (try? container.decodeIfPresent(Int64.self, forKey: .timestamp)) ?? Int64(Date().timeIntervalSince1970)
-        self.hasReplyAction = (try? container.decodeIfPresent(Bool.self, forKey: .hasReplyAction)) ?? false
+        let canReply = (try? container.decodeIfPresent(Bool.self, forKey: .supportsReply))
+            ?? (try? container.decodeIfPresent(Bool.self, forKey: .hasReplyAction))
+            ?? false
+        self.hasReplyAction = canReply
+        self.supportsReply = canReply
         self.filePath = try? container.decodeIfPresent(String.self, forKey: .filePath)
         self.deviceId = try? container.decodeIfPresent(String.self, forKey: .deviceId)
         self.deviceName = try? container.decodeIfPresent(String.self, forKey: .deviceName)
         self.actions = try? container.decodeIfPresent([NotificationActionInfo].self, forKey: .actions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(packageName, forKey: .packageName)
+        try container.encode(appName, forKey: .appName)
+        try container.encode(title, forKey: .title)
+        try container.encode(body, forKey: .body)
+        try container.encodeIfPresent(iconBase64, forKey: .iconBase64)
+        try container.encode(timestamp, forKey: .timestamp)
+        try container.encode(hasReplyAction, forKey: .hasReplyAction)
+        try container.encode(supportsReply, forKey: .supportsReply)
+        try container.encodeIfPresent(filePath, forKey: .filePath)
+        try container.encodeIfPresent(deviceId, forKey: .deviceId)
+        try container.encodeIfPresent(deviceName, forKey: .deviceName)
+        try container.encodeIfPresent(actions, forKey: .actions)
     }
 }
 

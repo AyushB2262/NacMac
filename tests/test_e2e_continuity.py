@@ -78,13 +78,17 @@ def run_tests():
     nacmac_dir = os.path.expanduser("~/.nacmac")
     os.makedirs(nacmac_dir, exist_ok=True)
     paired_path = os.path.join(nacmac_dir, "paired_device.json")
+    paired_multi_path = os.path.join(nacmac_dir, "paired_devices.json")
     qr_path = os.path.join(nacmac_dir, "active_qr.json")
     paired_bak = os.path.join(nacmac_dir, "paired_device.json.test_bak")
+    paired_multi_bak = os.path.join(nacmac_dir, "paired_devices.json.test_bak")
     qr_bak = os.path.join(nacmac_dir, "active_qr.json.test_bak")
 
     # If a prior interrupted test left backups, recover them first
     if os.path.exists(paired_bak) and not os.path.exists(paired_path):
         shutil.move(paired_bak, paired_path)
+    if os.path.exists(paired_multi_bak) and not os.path.exists(paired_multi_path):
+        shutil.move(paired_multi_bak, paired_multi_path)
     if os.path.exists(qr_bak) and not os.path.exists(qr_path):
         shutil.move(qr_bak, qr_path)
 
@@ -106,6 +110,12 @@ def run_tests():
         os.remove(paired_path)
         had_paired = True
 
+    had_paired_multi = False
+    if os.path.exists(paired_multi_path):
+        shutil.copy2(paired_multi_path, paired_multi_bak)
+        os.remove(paired_multi_path)
+        had_paired_multi = True
+
     had_qr = False
     if os.path.exists(qr_path):
         shutil.copy2(qr_path, qr_bak)
@@ -121,6 +131,13 @@ def run_tests():
             os.remove(paired_bak)
         elif not had_paired and os.path.exists(paired_path):
             os.remove(paired_path)
+
+        if had_paired_multi and os.path.exists(paired_multi_bak):
+            shutil.move(paired_multi_bak, paired_multi_path)
+        elif os.path.exists(paired_multi_bak):
+            os.remove(paired_multi_bak)
+        elif not had_paired_multi and os.path.exists(paired_multi_path):
+            os.remove(paired_multi_path)
 
         if had_qr and os.path.exists(qr_bak):
             shutil.move(qr_bak, qr_path)

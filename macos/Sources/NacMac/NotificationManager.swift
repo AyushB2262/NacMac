@@ -51,8 +51,19 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
             let deviceId = userInfo["deviceId"] as? String
             
             sendNotificationAction(notificationKey: notifId, actionIndex: actionIndex, replyText: replyText, deviceId: deviceId)
+            dismissNotification(id: notifId)
         } else if actionId == UNNotificationDefaultActionIdentifier {
             handleNotificationAction(userInfo: userInfo)
+        } else if actionId == UNNotificationDismissActionIdentifier {
+            let notifId = (userInfo["notificationId"] as? String) ?? response.notification.request.identifier
+            let deviceId = userInfo["deviceId"] as? String
+            dismissNotification(id: notifId)
+            let dismissObj = NotificationDismissPayload(id: notifId, deviceId: deviceId)
+            if let data = try? JSONEncoder().encode(dismissObj),
+               let payloadStr = String(data: data, encoding: .utf8) {
+                let envelope = NacMacEnvelope(type: .notificationDismissed, payload: payloadStr)
+                NetworkServer.shared.sendEnvelope(envelope, to: deviceId)
+            }
         }
         completionHandler()
     }
@@ -136,13 +147,17 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
             ? "\(payload.title) (\(payload.appName))"
             : payload.appName
         
-        let originTag = payload.deviceName.map { "via \($0)" }
+        let resolvedDeviceName = payload.deviceName
+            ?? payload.deviceId.flatMap { PairingManager.shared.getPairedDevice(androidId: $0)?.deviceName }
+        let originTag = resolvedDeviceName.map { "via \($0)" }
         let bodyText = payload.body
         let appName = payload.appName
         let titleText = payload.title
         
+        var effectivePayload = payload
+        effectivePayload.deviceName = resolvedDeviceName
         Task { @MainActor in
-            DashboardState.shared.addNotification(from: payload)
+            DashboardState.shared.addNotification(from: effectivePayload)
         }
         
         guard hasBundle else {
@@ -250,6 +265,13 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
     public func dismissNotification(id: String) {
         if hasBundle {
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+            lock.lock()
+            let categoryId = "CATEGORY_\(id)"
+            if let idx = registeredCategories.firstIndex(where: { $0.identifier == categoryId }) {
+                registeredCategories.remove(at: idx)
+                UNUserNotificationCenter.current().setNotificationCategories(registeredCategories)
+            }
+            lock.unlock()
         }
         print("[NacMac-Notification] Dismissed notification id: \(id)")
     }

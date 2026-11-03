@@ -124,7 +124,7 @@ class NacMacAccessibilityService : AccessibilityService() {
                 lastSyncedHash = hash
                 val payload = ClipboardSyncPayload(
                     text = text,
-                    timestamp = System.currentTimeMillis() / 1000,
+                    timestamp = System.currentTimeMillis(),
                     sourceDeviceId = DeviceStore(applicationContext).androidId,
                     hash = hash
                 )

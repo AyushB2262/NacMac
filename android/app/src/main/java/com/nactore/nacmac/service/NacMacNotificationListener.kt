@@ -62,18 +62,35 @@ class NacMacNotificationListener : NotificationListenerService() {
             }
 
             val action = actions[payload.actionIndex]
+            val pendingIntent = action.actionIntent
+            if (pendingIntent == null) {
+                Log.w("NacMac-NotifListener", "Action at index ${payload.actionIndex} has null actionIntent")
+                return
+            }
+
             try {
-                if (!payload.replyText.isNullOrEmpty() && !action.remoteInputs.isNullOrEmpty()) {
-                    val intent = Intent()
-                    val bundle = Bundle()
-                    for (remoteInput in action.remoteInputs) {
-                        bundle.putCharSequence(remoteInput.resultKey, payload.replyText)
+                if (!payload.replyText.isNullOrEmpty()) {
+                    val targetAction = if (!action.remoteInputs.isNullOrEmpty()) action else (actions.find { !it.remoteInputs.isNullOrEmpty() } ?: action)
+                    val targetPendingIntent = targetAction.actionIntent ?: pendingIntent
+                    val remoteInputs = targetAction.remoteInputs
+
+                    if (!remoteInputs.isNullOrEmpty()) {
+                        val intent = Intent()
+                        val bundle = Bundle()
+                        for (remoteInput in remoteInputs) {
+                            bundle.putCharSequence(remoteInput.resultKey, payload.replyText)
+                        }
+                        RemoteInput.addResultsToIntent(remoteInputs, intent, bundle)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            RemoteInput.setResultsSource(intent, RemoteInput.SOURCE_FREE_FORM_INPUT)
+                        }
+                        targetPendingIntent.send(context, 0, intent)
+                        Log.i("NacMac-NotifListener", "Dispatched RemoteInput inline reply: \"${payload.replyText}\" for ${sbn.packageName}")
+                    } else {
+                        targetPendingIntent.send()
                     }
-                    RemoteInput.addResultsToIntent(action.remoteInputs, intent, bundle)
-                    action.actionIntent.send(context, 0, intent)
-                    Log.i("NacMac-NotifListener", "Dispatched RemoteInput inline reply: \"${payload.replyText}\" for ${sbn.packageName}")
                 } else {
-                    action.actionIntent.send()
+                    pendingIntent.send()
                     Log.i("NacMac-NotifListener", "Dispatched action button click: \"${action.title}\" for ${sbn.packageName}")
                 }
             } catch (e: Exception) {
@@ -214,13 +231,14 @@ class NacMacNotificationListener : NotificationListenerService() {
         sbn.notification.actions?.forEachIndexed { idx, action ->
             val isReply = action.remoteInputs?.isNotEmpty() == true
             val actTitle = action.title?.toString()?.trim() ?: if (isReply) "Reply" else "Action $idx"
-            actionsList.add(NotificationActionInfo(index = idx, title = actTitle, isReply = isReply))
+            actionsList.add(NotificationActionInfo(index = idx, title = actTitle, isReply = isReply, supportsReply = isReply))
         }
 
         val notifId = "${pkg}_${sbn.id}_${sbn.tag ?: "0"}"
         activeNotificationCache[notifId] = sbn
 
         val deviceStore = DeviceStore(applicationContext)
+        val canReply = actionsList.any { it.isReply }
         val payload = NotificationPayload(
             id = notifId,
             packageName = pkg,
@@ -229,7 +247,8 @@ class NacMacNotificationListener : NotificationListenerService() {
             body = body,
             iconBase64 = iconBase64,
             timestamp = sbn.postTime / 1000,
-            hasReplyAction = actionsList.any { it.isReply },
+            hasReplyAction = canReply,
+            supportsReply = canReply,
             deviceId = deviceStore.androidId,
             deviceName = deviceStore.deviceName,
             actions = actionsList

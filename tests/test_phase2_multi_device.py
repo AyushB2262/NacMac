@@ -17,6 +17,7 @@ import struct
 import json
 import time
 import hashlib
+import base64
 import uuid
 import subprocess
 import shutil
@@ -119,16 +120,22 @@ def run_tests():
                 shutil.move(paired_bak, paired_path)
             elif os.path.exists(paired_bak):
                 os.remove(paired_bak)
+            elif not had_paired and os.path.exists(paired_path):
+                os.remove(paired_path)
 
             if had_paired_multi and os.path.exists(paired_multi_bak):
                 shutil.move(paired_multi_bak, paired_multi_path)
             elif os.path.exists(paired_multi_bak):
                 os.remove(paired_multi_bak)
+            elif not had_paired_multi and os.path.exists(paired_multi_path):
+                os.remove(paired_multi_path)
 
             if had_qr and os.path.exists(qr_bak):
                 shutil.move(qr_bak, qr_path)
             elif os.path.exists(qr_bak):
                 os.remove(qr_bak)
+            elif not had_qr and os.path.exists(qr_path):
+                os.remove(qr_path)
 
         atexit.register(restore_state)
 
@@ -266,8 +273,8 @@ def run_tests():
         print("\n--- Test 4: Interactive Notification Actions & In-line Replies ---")
         notif_id = f"com.whatsapp_101_{dev_a_id}"
         actions = [
-            {"index": 0, "title": "Reply", "isReply": True},
-            {"index": 1, "title": "Mark as read", "isReply": False}
+            {"index": 0, "title": "Reply", "isReply": True, "supportsReply": True},
+            {"index": 1, "title": "Mark as read", "isReply": False, "supportsReply": False}
         ]
         notif_payload = {
             "id": notif_id,
@@ -277,12 +284,30 @@ def run_tests():
             "body": "Hey, is the NacMac release ready?",
             "timestamp": int(time.time()),
             "hasReplyAction": True,
+            "supportsReply": True,
             "deviceId": dev_a_id,
             "deviceName": "Google Pixel 8 Pro",
             "actions": actions
         }
         PacketFraming.send_envelope(sock_a, "NOTIFICATION", notif_payload)
         print(f"[*] Dispatched notification with {len(actions)} actions from {dev_a_id}")
+
+        # Also test modern supportsReply-only payload
+        modern_notif_id = f"com.telegram_modern_{dev_a_id}"
+        PacketFraming.send_envelope(sock_a, "NOTIFICATION", {
+            "id": modern_notif_id,
+            "packageName": "org.telegram.messenger",
+            "appName": "Telegram",
+            "title": "Developer",
+            "body": "Modern supportsReply flag test",
+            "timestamp": int(time.time()),
+            "supportsReply": True,
+            "deviceId": dev_a_id,
+            "actions": [
+                {"index": 0, "title": "Quick Reply", "supportsReply": True}
+            ]
+        })
+        PacketFraming.send_envelope(sock_a, "NOTIFICATION_DISMISSED", {"id": modern_notif_id, "deviceId": dev_a_id})
 
         # Simulate Mac user triggering notification action (in-line reply)
         reply_action = {
@@ -409,6 +434,61 @@ def run_tests():
         payload_a2 = json.loads(resp_a2["payload"])
         assert payload_a2["success"] is True
         print("[PASS] Device A seamlessly reconnected and authenticated!")
+
+        # -------------------------------------------------------------
+        # TEST 7: Concurrent Multi-Device Chunked File Transfer & Socket Isolation
+        # -------------------------------------------------------------
+        print("\n--- Test 7: Concurrent Chunked File Transfer & Socket Isolation ---")
+        transfer_id = str(uuid.uuid4())
+        test_filename = f"phase2_multi_transfer_{int(time.time())}.dat"
+        file_bytes = os.urandom(256 * 1024)
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+        # Device A starts file transfer to Mac
+        PacketFraming.send_envelope(sock_a, "FILE_START", {
+            "transferId": transfer_id,
+            "filename": test_filename,
+            "size": len(file_bytes),
+            "sha256": file_hash
+        })
+
+        chunk_size = 64 * 1024
+        offset = 0
+        while offset < len(file_bytes):
+            chunk = file_bytes[offset:offset + chunk_size]
+            b64_data = base64.b64encode(chunk).decode("ascii")
+            PacketFraming.send_envelope(sock_a, "FILE_CHUNK", {
+                "transferId": transfer_id,
+                "offset": offset,
+                "length": len(chunk),
+                "dataBase64": b64_data
+            })
+            offset += len(chunk)
+
+            # Concurrently on Device B: send heartbeat ping to verify socket isolation
+            PacketFraming.send_envelope(sock_b, "HEARTBEAT_PING", {})
+            pong_concurrent = PacketFraming.read_envelope(sock_b, timeout=2.0)
+            assert pong_concurrent is not None and pong_concurrent.get("type") == "HEARTBEAT_PONG", f"Device B failed concurrent heartbeat: {pong_concurrent}"
+
+        PacketFraming.send_envelope(sock_a, "FILE_END", {
+            "transferId": transfer_id,
+            "totalBytes": len(file_bytes)
+        })
+
+        time.sleep(1.0)
+
+        # Verify file arrived on Mac and exact SHA-256 matches
+        dest_path = os.path.expanduser(f"~/Downloads/NacMac/{test_filename}")
+        assert os.path.exists(dest_path), f"Transferred file not found at {dest_path}"
+        with open(dest_path, "rb") as f:
+            saved_bytes = f.read()
+        assert len(saved_bytes) == len(file_bytes), f"File length mismatch: {len(saved_bytes)} vs {len(file_bytes)}"
+        assert hashlib.sha256(saved_bytes).hexdigest() == file_hash, "SHA-256 hash mismatch on transferred file!"
+        try:
+            os.remove(dest_path)
+        except:
+            pass
+        print(f"[PASS] 256 KB file transfer verified with exact SHA-256 while Device B operated concurrently!")
 
         print("\n" + "=" * 70)
         print("ALL PHASE 2 MULTI-DEVICE & CONTINUITY TESTS PASSED SUCCESSFULLY!")

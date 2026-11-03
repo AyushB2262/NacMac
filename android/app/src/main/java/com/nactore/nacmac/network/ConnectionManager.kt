@@ -52,14 +52,22 @@ class ConnectionManager private constructor(private val context: Context) {
 
     private var reconnectJob: Job? = null
 
-    private val discoveryClient = DiscoveryClient(context) { ip, port ->
+    private val discoveryClient = DiscoveryClient(context) { ip, port, macId ->
         scope.launch(Dispatchers.IO) {
             val pairedMacs = deviceStore.getPairedMacs()
-            for (paired in pairedMacs) {
-                if (!activeConnections.containsKey(paired.macId)) {
-                    val updated = paired.copy(lastKnownIp = ip, port = port)
-                    deviceStore.savePairedMac(updated)
-                    connectToMac(updated)
+            if (macId != null) {
+                val matched = pairedMacs.find { it.macId == macId }
+                if (matched != null && !activeConnections.containsKey(matched.macId)) {
+                    val candidate = matched.copy(lastKnownIp = ip, port = port)
+                    connectToMac(candidate)
+                }
+            } else {
+                for (paired in pairedMacs) {
+                    if (!activeConnections.containsKey(paired.macId)) {
+                        val candidate = paired.copy(lastKnownIp = ip, port = port)
+                        val ok = connectToMac(candidate)
+                        if (ok) break
+                    }
                 }
             }
         }
@@ -162,6 +170,7 @@ class ConnectionManager private constructor(private val context: Context) {
             if (respEnvelope?.type == NacMacMessageType.PAIR_RESPONSE) {
                 val respObj = JSONObject(respEnvelope.payload)
                 if (respObj.optBoolean("success", false)) {
+                    deviceStore.savePairedMac(paired)
                     val conn = MacConnection(
                         macId = paired.macId,
                         macName = paired.macName,
@@ -244,7 +253,7 @@ class ConnectionManager private constructor(private val context: Context) {
                     val req = SMSConversationsRequestPayload.fromJSON(envelope.payload)
                     val limit = req?.limit ?: 50
                     val threads = SmsManagerHelper.getConversations(context, limit)
-                    val resp = SMSConversationsResponsePayload(threads = threads)
+                    val resp = SMSConversationsResponsePayload(threads = threads, deviceId = deviceStore.androidId)
                     val respEnvelope = NacMacEnvelope(NacMacMessageType.SMS_CONVERSATIONS_RESPONSE, resp.toJSON().toString())
                     sendEnvelope(respEnvelope, conn.macId)
                     Log.d(TAG, "Responded to SMS_CONVERSATIONS_REQUEST with ${threads.size} threads to ${conn.macName}")
@@ -255,7 +264,7 @@ class ConnectionManager private constructor(private val context: Context) {
                     val req = SMSMessagesRequestPayload.fromJSON(envelope.payload)
                     if (req != null) {
                         val messages = SmsManagerHelper.getMessages(context, req.threadId, req.limit)
-                        val resp = SMSMessagesResponsePayload(threadId = req.threadId, messages = messages)
+                        val resp = SMSMessagesResponsePayload(threadId = req.threadId, messages = messages, deviceId = deviceStore.androidId)
                         val respEnvelope = NacMacEnvelope(NacMacMessageType.SMS_MESSAGES_RESPONSE, resp.toJSON().toString())
                         sendEnvelope(respEnvelope, conn.macId)
                         Log.d(TAG, "Responded to SMS_MESSAGES_REQUEST for thread ${req.threadId} with ${messages.size} messages to ${conn.macName}")

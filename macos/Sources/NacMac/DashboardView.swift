@@ -163,11 +163,18 @@ final class DashboardState: ObservableObject {
     
     func sendSMS(recipient: String, message: String, threadId: Int64? = nil) {
         guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let target = (targetSendDevice == "ALL" ? nil : targetSendDevice)
+        var target = (targetSendDevice == "ALL" ? nil : targetSendDevice)
+        if target == nil {
+            target = connectedDevices.first?.deviceId
+        }
+        guard let resolvedTarget = target else {
+            addLog("No connected phone to send SMS", type: "warning")
+            return
+        }
         let req = SMSSendPayload(recipient: recipient, message: message, threadId: threadId)
         if let data = try? JSONEncoder().encode(req),
            let str = String(data: data, encoding: .utf8) {
-            NetworkServer.shared.sendEnvelope(NacMacEnvelope(type: .smsSend, payload: str), to: target)
+            NetworkServer.shared.sendEnvelope(NacMacEnvelope(type: .smsSend, payload: str), to: resolvedTarget)
             let optimistic = SMSMessageItem(
                 messageId: Int64(Date().timeIntervalSince1970 * 1000),
                 threadId: threadId ?? 0,
@@ -416,6 +423,9 @@ public struct DashboardView: View {
         Button(action: {
             withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
                 state.selectedTab = id
+                if id == "Messages" && state.smsThreads.isEmpty && !state.connectedDevices.isEmpty {
+                    state.requestSMSConversations()
+                }
             }
         }) {
             HStack(spacing: 10) {

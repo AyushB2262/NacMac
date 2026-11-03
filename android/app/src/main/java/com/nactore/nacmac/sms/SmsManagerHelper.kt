@@ -28,7 +28,7 @@ object SmsManagerHelper {
                 projection,
                 null,
                 null,
-                "date DESC LIMIT $limit"
+                null
             )
             
             cursor?.use { c ->
@@ -52,6 +52,7 @@ object SmsManagerHelper {
                             unreadCount = detail.unreadCount
                         )
                     )
+                    if (threads.size >= limit) break
                 }
             }
         } catch (e: Exception) {
@@ -79,7 +80,7 @@ object SmsManagerHelper {
                 arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.READ),
                 "${Telephony.Sms.THREAD_ID} = ?",
                 arrayOf(threadId.toString()),
-                "${Telephony.Sms.DATE} DESC LIMIT 1"
+                "${Telephony.Sms.DATE} DESC"
             )
             cursor?.use { c ->
                 if (c.moveToFirst()) {
@@ -108,7 +109,7 @@ object SmsManagerHelper {
                 arrayOf(Telephony.Sms.THREAD_ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.READ),
                 null,
                 null,
-                "${Telephony.Sms.DATE} DESC LIMIT ${limit * 3}"
+                "${Telephony.Sms.DATE} DESC"
             )
             cursor?.use { c ->
                 val threadIdIdx = c.getColumnIndex(Telephony.Sms.THREAD_ID)
@@ -152,7 +153,7 @@ object SmsManagerHelper {
                 arrayOf(Telephony.Sms._ID, Telephony.Sms.THREAD_ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.TYPE),
                 "${Telephony.Sms.THREAD_ID} = ?",
                 arrayOf(threadId.toString()),
-                "${Telephony.Sms.DATE} ASC LIMIT $limit"
+                "${Telephony.Sms.DATE} ASC"
             )
             cursor?.use { c ->
                 val idIdx = c.getColumnIndex(Telephony.Sms._ID)
@@ -181,6 +182,7 @@ object SmsManagerHelper {
                             isIncoming = isIncoming
                         )
                     )
+                    if (messages.size >= limit) break
                 }
             }
         } catch (e: Exception) {
@@ -204,6 +206,18 @@ object SmsManagerHelper {
             } else {
                 smsManager.sendTextMessage(recipient, null, message, null, null)
             }
+
+            // Attempt to write sent message to system Telephony provider for history continuity
+            try {
+                val values = android.content.ContentValues().apply {
+                    put(Telephony.Sms.ADDRESS, recipient)
+                    put(Telephony.Sms.BODY, message)
+                    put(Telephony.Sms.DATE, System.currentTimeMillis())
+                    put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_SENT)
+                }
+                context.contentResolver.insert(Telephony.Sms.Sent.CONTENT_URI, values)
+            } catch (_: Exception) {}
+
             Log.i(TAG, "SMS successfully dispatched to $recipient")
             true
         } catch (e: Exception) {

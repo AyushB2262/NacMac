@@ -160,22 +160,26 @@ data class PairResponsePayload(
 data class NotificationActionInfo(
     val index: Int,
     val title: String,
-    val isReply: Boolean = false
+    val isReply: Boolean = false,
+    val supportsReply: Boolean = isReply
 ) {
     fun toJSON(): JSONObject {
         val obj = JSONObject()
         obj.put("index", index)
         obj.put("title", title)
         obj.put("isReply", isReply)
+        obj.put("supportsReply", supportsReply)
         return obj
     }
 
     companion object {
         fun fromJSON(obj: JSONObject): NotificationActionInfo {
+            val reply = obj.optBoolean("supportsReply", obj.optBoolean("isReply", false))
             return NotificationActionInfo(
                 index = obj.getInt("index"),
                 title = obj.getString("title"),
-                isReply = obj.optBoolean("isReply", false)
+                isReply = reply,
+                supportsReply = reply
             )
         }
     }
@@ -190,6 +194,7 @@ data class NotificationPayload(
     val iconBase64: String? = null,
     val timestamp: Long = System.currentTimeMillis() / 1000,
     val hasReplyAction: Boolean = false,
+    val supportsReply: Boolean = hasReplyAction,
     val deviceId: String? = null,
     val deviceName: String? = null,
     val actions: List<NotificationActionInfo> = emptyList()
@@ -204,6 +209,7 @@ data class NotificationPayload(
         if (iconBase64 != null) obj.put("iconBase64", iconBase64)
         obj.put("timestamp", timestamp)
         obj.put("hasReplyAction", hasReplyAction)
+        obj.put("supportsReply", supportsReply)
         if (deviceId != null) obj.put("deviceId", deviceId)
         if (deviceName != null) obj.put("deviceName", deviceName)
         if (actions.isNotEmpty()) {
@@ -225,6 +231,7 @@ data class NotificationPayload(
                         actionsList.add(NotificationActionInfo.fromJSON(arr.getJSONObject(i)))
                     }
                 }
+                val canReply = obj.optBoolean("supportsReply", obj.optBoolean("hasReplyAction", false))
                 NotificationPayload(
                     id = obj.getString("id"),
                     packageName = obj.optString("packageName", ""),
@@ -233,7 +240,8 @@ data class NotificationPayload(
                     body = obj.optString("body", ""),
                     iconBase64 = if (obj.has("iconBase64") && !obj.isNull("iconBase64")) obj.getString("iconBase64") else null,
                     timestamp = obj.optLong("timestamp", System.currentTimeMillis() / 1000),
-                    hasReplyAction = obj.optBoolean("hasReplyAction", false),
+                    hasReplyAction = canReply,
+                    supportsReply = canReply,
                     deviceId = if (obj.has("deviceId") && !obj.isNull("deviceId")) obj.getString("deviceId") else null,
                     deviceName = if (obj.has("deviceName") && !obj.isNull("deviceName")) obj.getString("deviceName") else null,
                     actions = actionsList
@@ -700,13 +708,15 @@ data class SMSMessagesResponsePayload(
 data class SMSSendPayload(
     val recipient: String,
     val message: String,
-    val threadId: Long? = null
+    val threadId: Long? = null,
+    val deviceId: String? = null
 ) {
     fun toJSON(): JSONObject {
         val obj = JSONObject()
         obj.put("recipient", recipient)
         obj.put("message", message)
         if (threadId != null) obj.put("threadId", threadId)
+        if (deviceId != null) obj.put("deviceId", deviceId)
         return obj
     }
 
@@ -717,7 +727,8 @@ data class SMSSendPayload(
                 SMSSendPayload(
                     recipient = obj.getString("recipient"),
                     message = obj.getString("message"),
-                    threadId = if (obj.has("threadId") && !obj.isNull("threadId")) obj.getLong("threadId") else null
+                    threadId = if (obj.has("threadId") && !obj.isNull("threadId")) obj.getLong("threadId") else null,
+                    deviceId = if (obj.has("deviceId") && !obj.isNull("deviceId")) obj.getString("deviceId") else null
                 )
             } catch (e: Exception) {
                 null
