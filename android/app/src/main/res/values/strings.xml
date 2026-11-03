@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">NacMac</string>
+    <string name="accessibility_service_desc">Enables seamless Universal Clipboard copy/paste synchronization between your phone and your Mac.</string>
 </resources>

@@ -5,9 +5,10 @@ import AppKit
 public final class PairingManager: @unchecked Sendable {
     public static let shared = PairingManager()
     
-    private let storageURL: URL
+    private let multiStorageURL: URL
+    private let legacyStorageURL: URL
     private let qrPayloadURL: URL
-    private var pairedDevice: PairedDeviceRecord?
+    private var pairedDevices: [PairedDeviceRecord] = []
     private var activeSecret: String
     public let macId: String
     public let macName: String
@@ -19,21 +20,22 @@ public final class PairingManager: @unchecked Sendable {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let dir = home.appendingPathComponent(".nacmac", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        self.storageURL = dir.appendingPathComponent("paired_device.json")
+        self.multiStorageURL = dir.appendingPathComponent("paired_devices.json")
+        self.legacyStorageURL = dir.appendingPathComponent("paired_device.json")
         self.qrPayloadURL = dir.appendingPathComponent("active_qr.json")
         
         // Migrate legacy .lmm if present
         let legacyDir = home.appendingPathComponent(".lmm", isDirectory: true)
         let legacyStorage = legacyDir.appendingPathComponent("paired_device.json")
-        if !FileManager.default.fileExists(atPath: self.storageURL.path) && FileManager.default.fileExists(atPath: legacyStorage.path) {
-            try? FileManager.default.copyItem(at: legacyStorage, to: self.storageURL)
+        if !FileManager.default.fileExists(atPath: self.legacyStorageURL.path) && FileManager.default.fileExists(atPath: legacyStorage.path) {
+            try? FileManager.default.copyItem(at: legacyStorage, to: self.legacyStorageURL)
         }
         
         self.macId = Host.current().name ?? UUID().uuidString
         self.macName = Host.current().localizedName ?? "Mac"
         self.activeSecret = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         
-        loadPairedDevice()
+        loadPairedDevices()
         saveActiveQRPayload()
     }
     
@@ -114,11 +116,17 @@ public final class PairingManager: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         
-        // Either matches current pairing secret or we are already paired with this device
-        if req.authSecret == activeSecret || (pairedDevice != nil && pairedDevice?.androidId == req.androidId && pairedDevice?.secret == req.authSecret) {
+        let matchesActiveSecret = (req.authSecret == activeSecret)
+        let matchedIndex = pairedDevices.firstIndex(where: { $0.androidId == req.androidId && $0.secret == req.authSecret })
+        
+        if matchesActiveSecret || matchedIndex != nil {
             let record = PairedDeviceRecord(androidId: req.androidId, deviceName: req.deviceName, secret: req.authSecret)
-            self.pairedDevice = record
-            savePairedDevice(record)
+            if let idx = pairedDevices.firstIndex(where: { $0.androidId == req.androidId }) {
+                pairedDevices[idx] = record
+            } else {
+                pairedDevices.append(record)
+            }
+            savePairedDevices()
             return true
         }
         return false
@@ -127,21 +135,40 @@ public final class PairingManager: @unchecked Sendable {
     public func isDeviceTrusted(androidId: String, secret: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard let paired = pairedDevice else { return false }
-        return paired.androidId == androidId && paired.secret == secret
+        return pairedDevices.contains(where: { $0.androidId == androidId && $0.secret == secret })
     }
     
     public func getPairedDevice() -> PairedDeviceRecord? {
         lock.lock()
         defer { lock.unlock() }
-        return pairedDevice
+        return pairedDevices.last
+    }
+
+    public func getPairedDevice(androidId: String) -> PairedDeviceRecord? {
+        lock.lock()
+        defer { lock.unlock() }
+        return pairedDevices.first(where: { $0.androidId == androidId })
+    }
+
+    public func getPairedDevices() -> [PairedDeviceRecord] {
+        lock.lock()
+        defer { lock.unlock() }
+        return pairedDevices
     }
     
+    public func unpair(androidId: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        pairedDevices.removeAll { $0.androidId == androidId }
+        savePairedDevices()
+    }
+
     public func unpair() {
         lock.lock()
         defer { lock.unlock() }
-        pairedDevice = nil
-        try? FileManager.default.removeItem(at: storageURL)
+        pairedDevices.removeAll()
+        try? FileManager.default.removeItem(at: multiStorageURL)
+        try? FileManager.default.removeItem(at: legacyStorageURL)
         try? FileManager.default.removeItem(at: qrPayloadURL)
         let home = FileManager.default.homeDirectoryForCurrentUser
         try? FileManager.default.removeItem(at: home.appendingPathComponent(".lmm/paired_device.json"))
@@ -150,9 +177,15 @@ public final class PairingManager: @unchecked Sendable {
         saveActiveQRPayload()
     }
     
-    private func savePairedDevice(_ record: PairedDeviceRecord) {
-        if let data = try? JSONEncoder().encode(record) {
-            try? data.write(to: storageURL)
+    private func savePairedDevices() {
+        if let data = try? JSONEncoder().encode(pairedDevices) {
+            try? data.write(to: multiStorageURL)
+        }
+        // Save latest record to legacy file for backward compatibility with existing tests
+        if let last = pairedDevices.last, let legacyData = try? JSONEncoder().encode(last) {
+            try? legacyData.write(to: legacyStorageURL)
+        } else if pairedDevices.isEmpty {
+            try? FileManager.default.removeItem(at: legacyStorageURL)
         }
     }
     
@@ -169,12 +202,29 @@ public final class PairingManager: @unchecked Sendable {
         }
     }
     
-    private func loadPairedDevice() {
-        guard let data = try? Data(contentsOf: storageURL),
-              let record = try? JSONDecoder().decode(PairedDeviceRecord.self, from: data) else {
+    private func loadPairedDevices() {
+        if let multiData = try? Data(contentsOf: multiStorageURL),
+           let records = try? JSONDecoder().decode([PairedDeviceRecord].self, from: multiData) {
+            self.pairedDevices = records
+            if let last = records.last {
+                self.activeSecret = last.secret
+            }
             return
         }
-        self.pairedDevice = record
-        self.activeSecret = record.secret
+
+        // Fallback to legacy single-device JSON
+        if let legacyData = try? Data(contentsOf: legacyStorageURL) {
+            if let record = try? JSONDecoder().decode(PairedDeviceRecord.self, from: legacyData) {
+                self.pairedDevices = [record]
+                self.activeSecret = record.secret
+                savePairedDevices()
+            } else if let records = try? JSONDecoder().decode([PairedDeviceRecord].self, from: legacyData) {
+                self.pairedDevices = records
+                if let last = records.last {
+                    self.activeSecret = last.secret
+                }
+                savePairedDevices()
+            }
+        }
     }
 }

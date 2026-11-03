@@ -36,6 +36,7 @@ import com.nactore.nacmac.model.PairingQRPayload
 import com.nactore.nacmac.model.TransferRecord
 import com.nactore.nacmac.network.ConnectionManager
 import com.nactore.nacmac.network.ConnectionStatus
+import com.nactore.nacmac.service.NacMacAccessibilityService
 import com.nactore.nacmac.service.NacMacBackgroundService
 import com.nactore.nacmac.service.NacMacNotificationListener
 import com.nactore.nacmac.util.FileUtils
@@ -59,6 +60,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtNotifStatus: TextView
     private lateinit var cardNotificationMirroring: View
 
+    private lateinit var switchClipboardSync: SwitchCompat
+    private lateinit var txtClipboardStatus: TextView
+    private lateinit var cardClipboardSync: View
+
+    private lateinit var switchSmsSync: SwitchCompat
+    private lateinit var txtSmsStatus: TextView
+    private lateinit var cardSmsSync: View
+
+    private lateinit var layoutPairedDevicesList: LinearLayout
+
     // Transfer Views
     private lateinit var layoutActiveTransfer: View
     private lateinit var txtTransferItemName: TextView
@@ -68,6 +79,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var layoutTransfersList: LinearLayout
     private lateinit var layoutIntegrityBadge: View
     private lateinit var btnClearTransfers: TextView
+
+    private val smsPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.entries.all { it.value }
+        updateSmsSyncUI()
+        if (allGranted) {
+            Toast.makeText(this, "SMS permissions granted. Messages synced with Mac.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
@@ -139,7 +160,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateNotificationMirroringUI()
+        updateClipboardSyncUI()
+        updateSmsSyncUI()
         renderRecentTransfers(deviceStore.getRecentTransfers())
+        renderPairedMacs()
         observeTransfers()
     }
 
@@ -155,6 +179,16 @@ class MainActivity : AppCompatActivity() {
         txtNotifStatus = findViewById(R.id.txtNotifStatus)
         cardNotificationMirroring = findViewById(R.id.cardNotificationMirroring)
 
+        switchClipboardSync = findViewById(R.id.switchClipboardSync)
+        txtClipboardStatus = findViewById(R.id.txtClipboardStatus)
+        cardClipboardSync = findViewById(R.id.cardClipboardSync)
+
+        switchSmsSync = findViewById(R.id.switchSmsSync)
+        txtSmsStatus = findViewById(R.id.txtSmsStatus)
+        cardSmsSync = findViewById(R.id.cardSmsSync)
+
+        layoutPairedDevicesList = findViewById(R.id.layoutPairedDevicesList)
+
         // Transfer views
         layoutActiveTransfer = findViewById(R.id.layoutActiveTransfer)
         txtTransferItemName = findViewById(R.id.txtTransferItemName)
@@ -169,6 +203,179 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.btnThemeToggle)?.setImageResource(
             if (isNight) R.drawable.ic_sun else R.drawable.ic_moon
         )
+    }
+
+    private fun isAccessibilityGranted(): Boolean {
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+        val colonSplitter = android.text.TextUtils.SimpleStringSplitter(':')
+        colonSplitter.setString(enabled)
+        while (colonSplitter.hasNext()) {
+            val componentName = colonSplitter.next()
+            if (componentName.contains("NacMacAccessibilityService", ignoreCase = true)) {
+                return true
+            }
+        }
+        return NacMacAccessibilityService.isRunning()
+    }
+
+    private fun isSmsPermissionGranted(): Boolean {
+        val readSms = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+        val sendSms = ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+        return readSms && sendSms
+    }
+
+    private fun updateClipboardSyncUI() {
+        val isGranted = isAccessibilityGranted()
+        switchClipboardSync.setOnCheckedChangeListener(null)
+        switchClipboardSync.isChecked = isGranted
+
+        if (isGranted) {
+            txtClipboardStatus.text = "Active • Universal Clipboard automatically syncs"
+            txtClipboardStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+        } else {
+            txtClipboardStatus.text = "⚠️ Tap to enable Accessibility Service in Settings"
+            txtClipboardStatus.setTextColor(0xFFEA580C.toInt())
+        }
+
+        switchClipboardSync.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked && !isAccessibilityGranted()) {
+                showAccessibilityPermissionDialog()
+            } else if (!isChecked && isAccessibilityGranted()) {
+                try {
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    private fun showAccessibilityPermissionDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad / 2)
+            gravity = android.view.Gravity.CENTER_HORIZONTAL
+        }
+
+        val imgLogo = ImageView(this).apply {
+            setImageResource(R.drawable.ic_nacmac_logo)
+            val sz = (52 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                bottomMargin = (14 * resources.displayMetrics.density).toInt()
+            }
+            contentDescription = "NacMac"
+        }
+
+        val txtDesc = TextView(this).apply {
+            text = "NacMac uses Accessibility Services to seamlessly sync your clipboard between your phone and Mac in real time.\n\n" +
+                   "1. Tap 'Open Settings' below.\n" +
+                   "2. Find 'NacMac Clipboard Sync' in Installed Apps and toggle it ON.\n\n" +
+                   "💡 Android 13/14/15 Note: If the toggle is greyed out ('Restricted setting'), open NacMac App Info > 3 dots (top right) > 'Allow restricted settings' first."
+            textSize = 13.5f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+            setLineSpacing(4f, 1.2f)
+        }
+
+        layout.addView(imgLogo)
+        layout.addView(txtDesc)
+
+        AlertDialog.Builder(this)
+            .setTitle("Enable Universal Clipboard")
+            .setView(layout)
+            .setPositiveButton("Open Settings") { _, _ ->
+                try {
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+            .setNegativeButton("Cancel") { _, _ ->
+                updateClipboardSyncUI()
+            }
+            .show()
+    }
+
+    private fun updateSmsSyncUI() {
+        val isGranted = isSmsPermissionGranted()
+        switchSmsSync.setOnCheckedChangeListener(null)
+        switchSmsSync.isChecked = isGranted
+
+        if (isGranted) {
+            txtSmsStatus.text = "Active • SMS & RCS synced with Mac Messages Hub"
+            txtSmsStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+        } else {
+            txtSmsStatus.text = "⚠️ Tap to grant SMS permissions for native Mac messaging"
+            txtSmsStatus.setTextColor(0xFFEA580C.toInt())
+        }
+
+        switchSmsSync.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked && !isSmsPermissionGranted()) {
+                smsPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.READ_SMS,
+                        Manifest.permission.SEND_SMS,
+                        Manifest.permission.READ_CONTACTS
+                    )
+                )
+            }
+        }
+    }
+
+    private fun renderPairedMacs() {
+        layoutPairedDevicesList.removeAllViews()
+        val pairedMacs = deviceStore.getPairedMacs()
+        val connectedMacs = connectionManager.activeConnections
+
+        if (pairedMacs.size > 1) {
+            for (mac in pairedMacs) {
+                val isConnected = connectedMacs.containsKey(mac.macId)
+                val item = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    val padV = (8 * resources.displayMetrics.density).toInt()
+                    setPadding(0, padV, 0, padV)
+                }
+
+                val infoLayout = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+
+                val nameTv = TextView(this).apply {
+                    text = mac.macName
+                    textSize = 14f
+                    setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                }
+
+                val statusTv = TextView(this).apply {
+                    text = if (isConnected) "• Online (${mac.lastKnownIp})" else "• Offline"
+                    textSize = 12f
+                    setTextColor(if (isConnected) 0xFF15803D.toInt() else 0xFF64748B.toInt())
+                }
+
+                infoLayout.addView(nameTv)
+                infoLayout.addView(statusTv)
+
+                val btnUnpair = Button(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = "Unpair"
+                    textSize = 11f
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        (36 * resources.displayMetrics.density).toInt()
+                    )
+                    setOnClickListener {
+                        deviceStore.removePairedMac(mac.macId)
+                        connectionManager.disconnectMac(mac.macId)
+                        renderPairedMacs()
+                        Toast.makeText(this@MainActivity, "Unpaired ${mac.macName}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                item.addView(infoLayout)
+                item.addView(btnUnpair)
+                layoutPairedDevicesList.addView(item)
+            }
+        }
     }
 
     private fun isNotificationAccessGranted(): Boolean {
@@ -386,6 +593,28 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        cardClipboardSync.applyApplePressEffect {
+            if (!isAccessibilityGranted()) {
+                showAccessibilityPermissionDialog()
+            } else {
+                Toast.makeText(this, "Universal Clipboard is active and syncing", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        cardSmsSync.applyApplePressEffect {
+            if (!isSmsPermissionGranted()) {
+                smsPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.READ_SMS,
+                        Manifest.permission.SEND_SMS,
+                        Manifest.permission.READ_CONTACTS
+                    )
+                )
+            } else {
+                Toast.makeText(this, "SMS Hub is active and syncing with Mac", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         btnClearTransfers.applyApplePressEffect {
             deviceStore.clearRecentTransfers()
             connectionManager.fileTransferWorker?.clearHistory()
@@ -588,6 +817,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 }
+                renderPairedMacs()
             }
         }
     }

@@ -1,0 +1,113 @@
+import AppKit
+import Foundation
+import CryptoKit
+
+public final class ClipboardSyncManager: @unchecked Sendable {
+    public static let shared = ClipboardSyncManager()
+    
+    private var lastSyncedHash: String = ""
+    private var lastChangeCount: Int = NSPasteboard.general.changeCount
+    private var monitorTimer: Timer?
+    private let lock = NSLock()
+    
+    private init() {}
+    
+    public func start() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.stop()
+            self.lastChangeCount = NSPasteboard.general.changeCount
+            self.monitorTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+                self?.checkLocalPasteboard()
+            }
+            print("[NacMac-Clipboard] Universal Clipboard monitor started (300ms debounce)")
+        }
+    }
+    
+    public func stop() {
+        DispatchQueue.main.async { [weak self] in
+            self?.monitorTimer?.invalidate()
+            self?.monitorTimer = nil
+        }
+    }
+    
+    // MARK: - Local Pasteboard Monitor
+    
+    private func checkLocalPasteboard() {
+        let currentCount = NSPasteboard.general.changeCount
+        guard currentCount != lastChangeCount else { return }
+        lastChangeCount = currentCount
+        
+        guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else {
+            return
+        }
+        
+        let hash = computeSHA256(text)
+        
+        lock.lock()
+        if hash == lastSyncedHash {
+            lock.unlock()
+            return
+        }
+        lastSyncedHash = hash
+        lock.unlock()
+        
+        let payload = ClipboardSyncPayload(
+            text: text,
+            timestamp: Int64(Date().timeIntervalSince1970 * 1000),
+            sourceDeviceId: PairingManager.shared.macId,
+            hash: hash
+        )
+        
+        guard let data = try? JSONEncoder().encode(payload),
+              let jsonStr = String(data: data, encoding: .utf8) else {
+            return
+        }
+        
+        let envelope = NacMacEnvelope(type: .clipboardSync, payload: jsonStr)
+        NetworkServer.shared.sendEnvelope(envelope)
+        print("[NacMac-Clipboard] Synced clipboard to connected devices (\(text.count) chars, hash: \(hash.prefix(8))...)")
+    }
+    
+    // MARK: - Incoming Clipboard from Phone
+    
+    public func handleIncoming(_ payloadString: String) {
+        guard let data = payloadString.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(ClipboardSyncPayload.self, from: data) else {
+            print("[NacMac-Clipboard] Failed to decode incoming CLIPBOARD_SYNC payload")
+            return
+        }
+        
+        lock.lock()
+        if payload.hash == lastSyncedHash {
+            lock.unlock()
+            // Loop prevention: already synced this exact content
+            return
+        }
+        lastSyncedHash = payload.hash
+        lock.unlock()
+        
+        // Broadcast clipboard update to all other connected devices (excluding the sender)
+        let envelope = NacMacEnvelope(type: .clipboardSync, payload: payloadString)
+        NetworkServer.shared.broadcastEnvelope(envelope, excluding: payload.sourceDeviceId)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(payload.text, forType: .string)
+            self.lastChangeCount = NSPasteboard.general.changeCount
+            print("[NacMac-Clipboard] Wrote remote clipboard from \(payload.sourceDeviceId) to Mac pasteboard (\(payload.text.count) chars)")
+            
+            Task { @MainActor in
+                let snippet = payload.text.count > 30 ? "\(payload.text.prefix(30))..." : payload.text
+                DashboardState.shared.addLog("Universal Clipboard: copied \"\(snippet)\" from device", type: "success")
+            }
+        }
+    }
+    
+    private func computeSHA256(_ string: String) -> String {
+        let data = Data(string.utf8)
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}

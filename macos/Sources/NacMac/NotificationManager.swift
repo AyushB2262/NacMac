@@ -6,6 +6,8 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
     public static let shared = NotificationManager()
     
     private let cacheDir: URL
+    private var registeredCategories = Set<UNNotificationCategory>()
+    private let lock = NSLock()
     private var hasBundle: Bool {
         return Bundle.main.bundleIdentifier != nil
     }
@@ -32,15 +34,47 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         completionHandler([.banner, .sound, .badge, .list])
     }
     
-    // UNUserNotificationCenterDelegate banner click action
+    // UNUserNotificationCenterDelegate banner click action & inline reply
     public func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        handleNotificationAction(userInfo: userInfo)
+        let actionId = response.actionIdentifier
+        
+        if actionId.hasPrefix("ACTION_") {
+            let indexStr = actionId.replacingOccurrences(of: "ACTION_", with: "")
+            let actionIndex = Int(indexStr) ?? 0
+            let replyText = (response as? UNTextInputNotificationResponse)?.userText
+            let notifId = (userInfo["notificationId"] as? String) ?? response.notification.request.identifier
+            let deviceId = userInfo["deviceId"] as? String
+            
+            sendNotificationAction(notificationKey: notifId, actionIndex: actionIndex, replyText: replyText, deviceId: deviceId)
+        } else if actionId == UNNotificationDefaultActionIdentifier {
+            handleNotificationAction(userInfo: userInfo)
+        }
         completionHandler()
+    }
+    
+    public func sendNotificationAction(notificationKey: String, actionIndex: Int, replyText: String?, deviceId: String?) {
+        let payload = NotificationActionPayload(
+            notificationKey: notificationKey,
+            actionIndex: actionIndex,
+            replyText: replyText,
+            deviceId: deviceId
+        )
+        if let data = try? JSONEncoder().encode(payload),
+           let jsonStr = String(data: data, encoding: .utf8) {
+            let envelope = NacMacEnvelope(type: .notificationAction, payload: jsonStr)
+            NetworkServer.shared.sendEnvelope(envelope, to: deviceId)
+            print("[NacMac-Notification] Sent action \(actionIndex) for \(notificationKey) to device \(deviceId ?? "all") (reply: \(replyText ?? "none"))")
+            
+            Task { @MainActor in
+                let desc = replyText != nil ? "Sent reply: \"\(replyText!)\"" : "Triggered notification action \(actionIndex)"
+                DashboardState.shared.addLog(desc, type: "info")
+            }
+        }
     }
     
     // NSUserNotificationCenterDelegate to display banner even when active
@@ -102,6 +136,7 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
             ? "\(payload.title) (\(payload.appName))"
             : payload.appName
         
+        let originTag = payload.deviceName.map { "via \($0)" }
         let bodyText = payload.body
         let appName = payload.appName
         let titleText = payload.title
@@ -111,21 +146,80 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         }
         
         guard hasBundle else {
-            fallbackDisplay(title: displayTitle, body: bodyText, filePath: payload.filePath)
+            let fallbackTitle = originTag != nil ? "\(displayTitle) (\(originTag!))" : displayTitle
+            fallbackDisplay(title: fallbackTitle, body: bodyText, filePath: payload.filePath)
             print("[NacMac-Notification] Delivered native banner for: \(appName) - \(titleText)")
             return
         }
         
         let content = UNMutableNotificationContent()
         content.title = displayTitle
+        if let origin = originTag {
+            content.subtitle = origin
+        }
         content.body = bodyText
         content.sound = .default
         content.threadIdentifier = payload.packageName
+        
+        var userInfoDict: [String: Any] = ["notificationId": payload.id]
+        if let devId = payload.deviceId {
+            userInfoDict["deviceId"] = devId
+        }
         if let filePath = payload.filePath, !filePath.isEmpty {
-            content.userInfo = ["filePath": filePath]
+            userInfoDict["filePath"] = filePath
         } else if payload.packageName == "com.nactore.nacmac.file" {
             let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.appendingPathComponent("NacMac").path ?? ""
-            content.userInfo = ["filePath": downloads]
+            userInfoDict["filePath"] = downloads
+        }
+        content.userInfo = userInfoDict
+        
+        // Dynamic Notification Actions & In-line reply
+        var unActions: [UNNotificationAction] = []
+        if let payloadActions = payload.actions, !payloadActions.isEmpty {
+            for action in payloadActions {
+                let actionId = "ACTION_\(action.index)"
+                if action.isReply {
+                    let replyAction = UNTextInputNotificationAction(
+                        identifier: actionId,
+                        title: action.title.isEmpty ? "Reply" : action.title,
+                        options: [],
+                        textInputButtonTitle: "Send",
+                        textInputPlaceholder: "Type reply..."
+                    )
+                    unActions.append(replyAction)
+                } else {
+                    let btnAction = UNNotificationAction(
+                        identifier: actionId,
+                        title: action.title,
+                        options: []
+                    )
+                    unActions.append(btnAction)
+                }
+            }
+        } else if payload.hasReplyAction {
+            let replyAction = UNTextInputNotificationAction(
+                identifier: "ACTION_0",
+                title: "Reply",
+                options: [],
+                textInputButtonTitle: "Send",
+                textInputPlaceholder: "Type reply..."
+            )
+            unActions.append(replyAction)
+        }
+        
+        if !unActions.isEmpty {
+            let categoryId = "CATEGORY_\(payload.id)"
+            let category = UNNotificationCategory(
+                identifier: categoryId,
+                actions: unActions,
+                intentIdentifiers: [],
+                options: [.customDismissAction]
+            )
+            lock.lock()
+            registeredCategories.insert(category)
+            UNUserNotificationCenter.current().setNotificationCategories(registeredCategories)
+            lock.unlock()
+            content.categoryIdentifier = categoryId
         }
         
         if let iconBase64 = payload.iconBase64,

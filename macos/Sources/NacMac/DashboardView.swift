@@ -10,11 +10,24 @@ final class DashboardState: ObservableObject {
     @Published var selectedTab: String = "Devices"
     @Published var isConnected: Bool = false
     @Published var connectedDeviceName: String = "No Paired Device"
-    @Published var pairedPath: String = "~/.nacmac/paired_device.json"
+    @Published var pairedPath: String = "~/.nacmac/paired_devices.json"
     @Published var autoConnect: Bool = true
     @Published var localIP: String = "127.0.0.1"
     @Published var port: Int = 52840
     @Published var qrCodeImage: NSImage? = nil
+    
+    // Multi-Device Lists
+    @Published var connectedDevices: [ConnectedDeviceInfo] = []
+    @Published var pairedDevices: [PairedDeviceRecord] = []
+    @Published var targetSendDevice: String = "ALL" // "ALL" or specific deviceId
+    
+    // SMS Hub State
+    @Published var smsThreads: [SMSThreadItem] = []
+    @Published var selectedThreadId: Int64? = nil
+    @Published var threadMessages: [SMSMessageItem] = []
+    @Published var smsSearchText: String = ""
+    @Published var isSmsLoading: Bool = false
+    @Published var smsStatusMessage: String = ""
     
     // Transfer Queue
     @Published var activeTransfer: ActiveTransferProgress? = nil
@@ -41,34 +54,60 @@ final class DashboardState: ObservableObject {
         let qrStr = PairingManager.shared.generateQRJSONString()
         self.qrCodeImage = PairingManager.shared.generateQRImage(from: qrStr)
         
-        if let paired = PairingManager.shared.getPairedDevice() {
-            self.connectedDeviceName = paired.deviceName
+        self.pairedDevices = PairingManager.shared.getPairedDevices()
+        self.connectedDevices = NetworkServer.shared.getConnectedDevices()
+        
+        if !connectedDevices.isEmpty {
             self.isConnected = true
+            if connectedDevices.count == 1 {
+                self.connectedDeviceName = connectedDevices[0].deviceName
+            } else {
+                self.connectedDeviceName = "\(connectedDevices.count) Devices Connected"
+            }
+        } else if let firstPaired = pairedDevices.first {
+            self.connectedDeviceName = firstPaired.deviceName
+            self.isConnected = false
         } else {
             self.connectedDeviceName = "No Device Paired"
             self.isConnected = false
         }
     }
     
-    func disconnect() {
-        PairingManager.shared.unpair()
-        NetworkServer.shared.disconnectPeer()
-        self.connectedDeviceName = "No Device Paired"
-        self.isConnected = false
-        addLog("Device unpaired and socket disconnected.", type: "warning")
+    func disconnect(deviceId: String? = nil) {
+        if let devId = deviceId {
+            NetworkServer.shared.disconnectPeer(deviceId: devId)
+            PairingManager.shared.unpair(androidId: devId)
+            addLog("Device \(devId) disconnected and unpaired.", type: "warning")
+        } else {
+            PairingManager.shared.unpair()
+            NetworkServer.shared.disconnectPeer()
+            self.connectedDeviceName = "No Device Paired"
+            self.isConnected = false
+            addLog("All devices unpaired and sockets disconnected.", type: "warning")
+        }
         refreshState()
     }
     
     func dismissNotification(id: String) {
+        let notifItem = notifications.first { $0.id == id }
         notifications.removeAll { $0.id == id }
         NotificationManager.shared.dismissNotification(id: id)
-        let dismissObj = NotificationDismissPayload(id: id)
+        let dismissObj = NotificationDismissPayload(id: id, deviceId: notifItem?.deviceId)
         if let data = try? JSONEncoder().encode(dismissObj),
            let payloadStr = String(data: data, encoding: .utf8) {
             let envelope = NacMacEnvelope(type: .notificationDismissed, payload: payloadStr)
-            NetworkServer.shared.sendEnvelope(envelope)
+            NetworkServer.shared.sendEnvelope(envelope, to: notifItem?.deviceId)
         }
         addLog("Dismissed notification: \(id)", type: "info")
+    }
+    
+    func sendNotificationAction(notificationKey: String, actionIndex: Int, replyText: String?, deviceId: String?) {
+        NotificationManager.shared.sendNotificationAction(
+            notificationKey: notificationKey,
+            actionIndex: actionIndex,
+            replyText: replyText,
+            deviceId: deviceId
+        )
     }
     
     func addNotification(from payload: NotificationPayload) {
@@ -79,19 +118,91 @@ final class DashboardState: ObservableObject {
             sender: payload.title,
             body: payload.body,
             icon: isFile ? "doc.fill" : (payload.packageName.contains("whatsapp") ? "message.fill" : "bell.fill"),
-            canReply: payload.hasReplyAction,
-            filePath: payload.filePath
+            canReply: payload.hasReplyAction || (payload.actions?.contains { $0.isReply } == true),
+            filePath: payload.filePath,
+            originDevice: payload.deviceName,
+            deviceId: payload.deviceId,
+            actions: payload.actions
         )
         notifications.removeAll { $0.id == payload.id }
         notifications.insert(item, at: 0)
-        addLog("Received notification from \(payload.appName): \(payload.title)", type: "success")
+        let originMsg = payload.deviceName != nil ? " (via \(payload.deviceName!))" : ""
+        addLog("Received notification from \(payload.appName): \(payload.title)\(originMsg)", type: "success")
     }
     
     func sendFile(at url: URL) {
-        NetworkServer.shared.sendFile(at: url)
+        let target = (targetSendDevice == "ALL" ? nil : targetSendDevice)
+        NetworkServer.shared.sendFile(at: url, to: target)
         let name = url.lastPathComponent
         completedTransfers.insert(CompletedTransfer(name: name, sizeString: "Ready", direction: "Sent", filePath: url.path), at: 0)
-        addLog("Initiated file transfer: \(name)", type: "info")
+        let targetMsg = target != nil ? " to selected device" : " to all online phones"
+        addLog("Initiated file transfer: \(name)\(targetMsg)", type: "info")
+    }
+    
+    // MARK: - SMS Messaging Actions
+    
+    func requestSMSConversations() {
+        let target = (targetSendDevice == "ALL" ? nil : targetSendDevice)
+        let req = SMSConversationsRequestPayload(limit: 50)
+        if let data = try? JSONEncoder().encode(req),
+           let str = String(data: data, encoding: .utf8) {
+            isSmsLoading = true
+            NetworkServer.shared.sendEnvelope(NacMacEnvelope(type: .smsConversationsRequest, payload: str), to: target)
+        }
+    }
+    
+    func selectSMSThread(threadId: Int64, toDevice: String? = nil) {
+        self.selectedThreadId = threadId
+        let target = toDevice ?? (targetSendDevice == "ALL" ? nil : targetSendDevice)
+        let req = SMSMessagesRequestPayload(threadId: threadId, limit: 100)
+        if let data = try? JSONEncoder().encode(req),
+           let str = String(data: data, encoding: .utf8) {
+            NetworkServer.shared.sendEnvelope(NacMacEnvelope(type: .smsMessagesRequest, payload: str), to: target)
+        }
+    }
+    
+    func sendSMS(recipient: String, message: String, threadId: Int64? = nil) {
+        guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let target = (targetSendDevice == "ALL" ? nil : targetSendDevice)
+        let req = SMSSendPayload(recipient: recipient, message: message, threadId: threadId)
+        if let data = try? JSONEncoder().encode(req),
+           let str = String(data: data, encoding: .utf8) {
+            NetworkServer.shared.sendEnvelope(NacMacEnvelope(type: .smsSend, payload: str), to: target)
+            let optimistic = SMSMessageItem(
+                messageId: Int64(Date().timeIntervalSince1970 * 1000),
+                threadId: threadId ?? 0,
+                address: recipient,
+                body: message,
+                timestamp: Int64(Date().timeIntervalSince1970 * 1000),
+                isIncoming: false
+            )
+            self.threadMessages.append(optimistic)
+            addLog("Sent SMS to \(recipient)", type: "info")
+        }
+    }
+    
+    func handleSMSConversations(_ resp: SMSConversationsResponsePayload) {
+        self.smsThreads = resp.threads
+        self.isSmsLoading = false
+        if let devId = resp.deviceId {
+            self.targetSendDevice = devId
+        }
+        if self.selectedThreadId == nil, let first = resp.threads.first {
+            selectSMSThread(threadId: first.threadId, toDevice: resp.deviceId)
+        }
+    }
+    
+    func handleSMSMessages(_ resp: SMSMessagesResponsePayload) {
+        if self.selectedThreadId == resp.threadId {
+            self.threadMessages = resp.messages
+        }
+    }
+    
+    func handleSMSSendStatus(_ status: SMSSendStatusPayload) {
+        self.smsStatusMessage = status.message
+        if status.success, let tid = status.threadId {
+            selectSMSThread(threadId: tid)
+        }
     }
     
     func addLog(_ message: String, type: String = "info") {
@@ -123,8 +234,11 @@ struct MirroredNotifItem: Identifiable {
     let icon: String
     let canReply: Bool
     let filePath: String?
+    let originDevice: String?
+    let deviceId: String?
+    let actions: [NotificationActionInfo]?
     
-    init(id: String, app: String, sender: String, body: String, icon: String, canReply: Bool, filePath: String? = nil) {
+    init(id: String, app: String, sender: String, body: String, icon: String, canReply: Bool, filePath: String? = nil, originDevice: String? = nil, deviceId: String? = nil, actions: [NotificationActionInfo]? = nil) {
         self.id = id
         self.app = app
         self.sender = sender
@@ -132,6 +246,9 @@ struct MirroredNotifItem: Identifiable {
         self.icon = icon
         self.canReply = canReply
         self.filePath = filePath
+        self.originDevice = originDevice
+        self.deviceId = deviceId
+        self.actions = actions
     }
 }
 
@@ -156,6 +273,7 @@ public struct DashboardView: View {
     @StateObject private var state = DashboardState.shared
     @State private var isTargeted: Bool = false
     @State private var isShowingLargeQR: Bool = false
+    @State private var messageInputText: String = ""
     
     public init() {}
     
@@ -171,6 +289,8 @@ public struct DashboardView: View {
             // MARK: - Main Content Switcher
             VStack(alignment: .leading, spacing: 0) {
                 switch state.selectedTab {
+                case "Messages":
+                    messagesView
                 case "File Hub":
                     fileHubView
                 case "Notifications":
@@ -246,6 +366,7 @@ public struct DashboardView: View {
             .padding(.bottom, 12)
             
             sidebarButton(title: "Devices", icon: "iphone", id: "Devices")
+            sidebarButton(title: "Messages", icon: "bubble.left.and.bubble.right", id: "Messages")
             sidebarButton(title: "File Hub", icon: "folder", id: "File Hub")
             sidebarButton(title: "Notifications", icon: "bell", id: "Notifications")
             sidebarButton(title: "Activity Log", icon: "list.bullet", id: "Activity Log")
@@ -357,77 +478,121 @@ public struct DashboardView: View {
     // MARK: - My Devices Card
     private var myDevicesCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("My Devices")
-                .font(.system(size: 14, weight: .semibold))
-                .tracking(-0.2)
-            
-            HStack(spacing: 12) {
-                Image(systemName: "iphone.gen3")
-                    .font(.system(size: 32))
-                    .foregroundColor(.secondary)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(state.connectedDeviceName)
-                            .font(.system(size: 14, weight: .bold))
-                        
-                        if state.isConnected {
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(Color.green)
-                                    .frame(width: 7, height: 7)
-                                Text("Secure & Online")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(.green)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.green.opacity(0.12))
-                            .cornerRadius(6)
-                        } else {
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(Color.secondary)
-                                    .frame(width: 7, height: 7)
-                                Text("Standby")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.gray.opacity(0.12))
-                            .cornerRadius(6)
-                        }
-                    }
-                    
-                    Text("Local ID: \(state.pairedPath)")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.secondary)
-                }
-                
+            HStack {
+                Text("My Devices (\(state.connectedDevices.count) Online)")
+                    .font(.system(size: 14, weight: .semibold))
+                    .tracking(-0.2)
                 Spacer()
-                
-                if state.isConnected || state.connectedDeviceName != "No Paired Device" {
+                if !state.connectedDevices.isEmpty || !state.pairedDevices.isEmpty {
                     Button(action: {
                         state.disconnect()
                     }) {
-                        Text("Disconnect")
-                            .font(.system(size: 12, weight: .medium))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
+                        Text("Disconnect All")
+                            .font(.system(size: 11, weight: .medium))
                     }
                     .buttonStyle(.bordered)
-                    .cornerRadius(8)
+                    .controlSize(.small)
                 }
             }
-            .padding(14)
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(appearanceMode == "dark" ? 0.22 : 0.04), radius: 8, x: 0, y: 3)
+            
+            if state.connectedDevices.isEmpty && state.pairedDevices.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "iphone.gen3")
+                        .font(.system(size: 32))
+                        .foregroundColor(.secondary)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("No Paired Device")
+                            .font(.system(size: 14, weight: .bold))
+                        Text("Scan QR code to pair your first phone")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(14)
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(12)
+            } else {
+                VStack(spacing: 8) {
+                    // Online connected devices
+                    ForEach(state.connectedDevices) { dev in
+                        HStack(spacing: 12) {
+                            Image(systemName: "iphone.gen3")
+                                .font(.system(size: 26))
+                                .foregroundColor(DashboardView.nacmacOrange)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text("\(dev.deviceName) - Online")
+                                        .font(.system(size: 13, weight: .bold))
+                                    Circle()
+                                        .fill(Color.green)
+                                        .frame(width: 7, height: 7)
+                                }
+                                Text("\(dev.ip) • ID: \(dev.deviceId)")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Button(action: {
+                                state.disconnect(deviceId: dev.deviceId)
+                            }) {
+                                Text("Disconnect")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                        .padding(10)
+                        .background(Color(NSColor.controlBackgroundColor))
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                        )
+                    }
+                    
+                    // Offline paired devices
+                    ForEach(state.pairedDevices.filter { p in !state.connectedDevices.contains { $0.deviceId == p.androidId } }, id: \.androidId) { paired in
+                        HStack(spacing: 12) {
+                            Image(systemName: "iphone.slash")
+                                .font(.system(size: 24))
+                                .foregroundColor(.secondary)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text("\(paired.deviceName) - Offline")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                    Circle()
+                                        .fill(Color.secondary)
+                                        .frame(width: 7, height: 7)
+                                }
+                                Text("ID: \(paired.androidId)")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Button(action: {
+                                state.disconnect(deviceId: paired.androidId)
+                            }) {
+                                Text("Unpair")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                        .padding(10)
+                        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                        .cornerRadius(10)
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity)
     }
@@ -501,9 +666,27 @@ public struct DashboardView: View {
     // MARK: - File Transfer Hub Drop Card
     private var fileDropCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("File Transfer & Progress Hub")
-                .font(.system(size: 14, weight: .semibold))
-                .tracking(-0.2)
+            HStack {
+                Text("File Transfer & Progress Hub")
+                    .font(.system(size: 14, weight: .semibold))
+                    .tracking(-0.2)
+                Spacer()
+                if state.connectedDevices.count > 1 {
+                    HStack(spacing: 4) {
+                        Text("Target:")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Picker("", selection: $state.targetSendDevice) {
+                            Text("Send to All").tag("ALL")
+                            ForEach(state.connectedDevices) { dev in
+                                Text(dev.deviceName).tag(dev.deviceId)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                    }
+                }
+            }
             
             Button(action: {
                 selectFileManually()
@@ -516,7 +699,7 @@ public struct DashboardView: View {
                     Text("Drag & Drop Files Here")
                         .font(.system(size: 14, weight: .semibold))
                     
-                    Text("Android transfers")
+                    Text(state.connectedDevices.count > 1 ? "Routes to: \(state.targetSendDevice == "ALL" ? "All Online Phones" : "Selected Phone")" : "Direct Wi-Fi transfer")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -1062,6 +1245,269 @@ public struct DashboardView: View {
             Spacer()
         }
         .padding(24)
+    }
+    
+    // MARK: - Messages Tab View (SMS / RCS Messaging Hub)
+    private var messagesView: some View {
+        HStack(spacing: 0) {
+            // Left Pane: Conversation Threads
+            VStack(spacing: 0) {
+                // Header with search & refresh
+                HStack {
+                    Text("Messages")
+                        .font(.system(size: 16, weight: .bold))
+                    Spacer()
+                    Button(action: {
+                        state.requestSMSConversations()
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Refresh SMS from Phone")
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+                
+                // Device selector if multi-device
+                if state.connectedDevices.count > 1 {
+                    HStack {
+                        Text("Phone:")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Picker("", selection: $state.targetSendDevice) {
+                            ForEach(state.connectedDevices) { dev in
+                                Text(dev.deviceName).tag(dev.deviceId)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .onChange(of: state.targetSendDevice) { _ in
+                            state.requestSMSConversations()
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
+                }
+                
+                // Search field
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 12))
+                    TextField("Search conversations...", text: $state.smsSearchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color(NSColor.textBackgroundColor).opacity(0.6))
+                .cornerRadius(8)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+                
+                Divider()
+                
+                // Threads list
+                if state.smsThreads.isEmpty {
+                    VStack(spacing: 12) {
+                        Spacer()
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .font(.system(size: 32))
+                            .foregroundColor(.secondary.opacity(0.6))
+                        Text(state.isSmsLoading ? "Loading messages..." : "No SMS threads synced yet")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Button(action: {
+                            state.requestSMSConversations()
+                        }) {
+                            Text("Sync from Phone")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    let filteredThreads = state.smsSearchText.isEmpty
+                        ? state.smsThreads
+                        : state.smsThreads.filter {
+                            ($0.contactName?.localizedCaseInsensitiveContains(state.smsSearchText) == true) ||
+                            $0.address.localizedCaseInsensitiveContains(state.smsSearchText) ||
+                            $0.snippet.localizedCaseInsensitiveContains(state.smsSearchText)
+                        }
+                    
+                    ScrollView {
+                        LazyVStack(spacing: 2) {
+                            ForEach(filteredThreads) { thread in
+                                Button(action: {
+                                    state.selectSMSThread(threadId: thread.threadId)
+                                }) {
+                                    HStack(spacing: 10) {
+                                        Circle()
+                                            .fill(DashboardView.nacmacOrange.opacity(0.2))
+                                            .frame(width: 36, height: 36)
+                                            .overlay(
+                                                Text(String((thread.contactName ?? thread.address).prefix(1)).uppercased())
+                                                    .font(.system(size: 14, weight: .bold))
+                                                    .foregroundColor(DashboardView.nacmacOrange)
+                                            )
+                                        
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            HStack {
+                                                Text(thread.contactName ?? thread.address)
+                                                    .font(.system(size: 12, weight: .semibold))
+                                                    .lineLimit(1)
+                                                Spacer()
+                                                Text(formatSMSTime(thread.timestamp))
+                                                    .font(.system(size: 10))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            
+                                            Text(thread.snippet)
+                                                .font(.system(size: 11))
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .background(state.selectedThreadId == thread.threadId ? Color.accentColor.opacity(0.15) : Color.clear)
+                                    .cornerRadius(8)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 6)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
+                }
+            }
+            .frame(width: 280)
+            .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
+            
+            Divider()
+            
+            // Right Pane: Active Thread Chat Bubbles & Composer
+            VStack(spacing: 0) {
+                if let threadId = state.selectedThreadId,
+                   let activeThread = state.smsThreads.first(where: { $0.threadId == threadId }) {
+                    // Chat header
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(activeThread.contactName ?? activeThread.address)
+                                .font(.system(size: 14, weight: .bold))
+                            if activeThread.contactName != nil {
+                                Text(activeThread.address)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color(NSColor.windowBackgroundColor).opacity(0.3))
+                    
+                    Divider()
+                    
+                    // Messages bubble scroll
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 8) {
+                                ForEach(state.threadMessages) { msg in
+                                    HStack {
+                                        if !msg.isIncoming {
+                                            Spacer(minLength: 40)
+                                        }
+                                        VStack(alignment: msg.isIncoming ? .leading : .trailing, spacing: 2) {
+                                            Text(msg.body)
+                                                .font(.system(size: 13))
+                                                .foregroundColor(msg.isIncoming ? .primary : .white)
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 8)
+                                                .background(msg.isIncoming ? Color(NSColor.controlBackgroundColor) : DashboardView.nacmacOrange)
+                                                .cornerRadius(14)
+                                            
+                                            Text(formatSMSTime(msg.timestamp))
+                                                .font(.system(size: 9))
+                                                .foregroundColor(.secondary)
+                                                .padding(.horizontal, 4)
+                                        }
+                                        if msg.isIncoming {
+                                            Spacer(minLength: 40)
+                                        }
+                                    }
+                                    .id(msg.id)
+                                }
+                            }
+                            .padding(16)
+                        }
+                        .onChange(of: state.threadMessages.count) { _ in
+                            if let last = state.threadMessages.last {
+                                proxy.scrollTo(last.id, anchor: .bottom)
+                            }
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    // Message Composer bar
+                    HStack(spacing: 10) {
+                        TextField("Text Message (SMS)...", text: $messageInputText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13))
+                            .onSubmit {
+                                let txt = messageInputText
+                                messageInputText = ""
+                                state.sendSMS(recipient: activeThread.address, message: txt, threadId: activeThread.threadId)
+                            }
+                        
+                        Button(action: {
+                            let txt = messageInputText
+                            messageInputText = ""
+                            state.sendSMS(recipient: activeThread.address, message: txt, threadId: activeThread.threadId)
+                        }) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(messageInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .secondary : DashboardView.nacmacOrange)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(messageInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color(NSColor.controlBackgroundColor))
+                } else {
+                    VStack(spacing: 12) {
+                        Spacer()
+                        Image(systemName: "message")
+                            .font(.system(size: 40))
+                            .foregroundColor(.secondary.opacity(0.5))
+                        Text("Select a conversation to view messages")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        }
+    }
+    
+    private func formatSMSTime(_ ts: Int64) -> String {
+        guard ts > 0 else { return "" }
+        let date = Date(timeIntervalSince1970: TimeInterval(ts > 1_000_000_000_000 ? ts / 1000 : ts))
+        let formatter = DateFormatter()
+        if Calendar.current.isDateInToday(date) {
+            formatter.dateFormat = "HH:mm"
+        } else {
+            formatter.dateFormat = "MMM d"
+        }
+        return formatter.string(from: date)
     }
     
     private func selectFileManually() {

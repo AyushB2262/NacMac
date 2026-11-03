@@ -1,10 +1,26 @@
 import Foundation
 import Network
 
+public struct ConnectedDeviceInfo: Equatable, Sendable, Identifiable {
+    public var id: String { deviceId }
+    public let deviceId: String
+    public let deviceName: String
+    public let ip: String
+    public let connectedAt: Date
+    
+    public init(deviceId: String, deviceName: String, ip: String, connectedAt: Date = Date()) {
+        self.deviceId = deviceId
+        self.deviceName = deviceName
+        self.ip = ip
+        self.connectedAt = connectedAt
+    }
+}
+
 public enum ConnectionState: Equatable, Sendable {
     case disconnected
     case listening(port: UInt16)
     case connected(deviceName: String, ip: String)
+    case multiConnected(devices: [ConnectedDeviceInfo])
 }
 
 public protocol NetworkServerDelegate: AnyObject, Sendable {
@@ -19,8 +35,13 @@ public final class NetworkServer: @unchecked Sendable {
     public private(set) var currentState: ConnectionState = .disconnected
     
     private var listener: NWListener?
-    private var activeConnection: NWConnection?
-    private var isConnectionAuthenticated: Bool = false
+    private var activeConnections: [String: NWConnection] = [:]
+    private var connectionDevices: [ObjectIdentifier: String] = [:]
+    private var deviceNames: [String: String] = [:]
+    private var deviceEndpoints: [String: String] = [:]
+    private var authenticatedDevices = Set<String>()
+    private var pendingConnections: [ObjectIdentifier: NWConnection] = [:]
+    
     private var netService: NetService?
     private let queue = DispatchQueue(label: "com.nactore.nacmac.network.server", qos: .userInitiated)
     
@@ -40,24 +61,68 @@ public final class NetworkServer: @unchecked Sendable {
     
     public func stop() {
         queue.async { [weak self] in
-            self?.stopHeartbeat()
-            self?.activeConnection?.cancel()
-            self?.activeConnection = nil
-            self?.listener?.cancel()
-            self?.listener = nil
-            self?.netService?.stop()
-            self?.netService = nil
-            self?.updateState(.disconnected)
+            guard let self = self else { return }
+            self.stopHeartbeat()
+            for (_, conn) in self.activeConnections {
+                conn.cancel()
+            }
+            self.activeConnections.removeAll()
+            self.connectionDevices.removeAll()
+            self.authenticatedDevices.removeAll()
+            self.deviceNames.removeAll()
+            self.deviceEndpoints.removeAll()
+            for (_, conn) in self.pendingConnections {
+                conn.cancel()
+            }
+            self.pendingConnections.removeAll()
+            self.listener?.cancel()
+            self.listener = nil
+            self.netService?.stop()
+            self.netService = nil
+            self.updateState(.disconnected)
         }
     }
     
-    public func disconnectPeer() {
+    public func disconnectPeer(deviceId: String? = nil) {
         queue.async { [weak self] in
             guard let self = self else { return }
-            self.stopHeartbeat()
-            self.activeConnection?.cancel()
-            self.activeConnection = nil
-            self.handleDisconnection()
+            if let targetId = deviceId {
+                if let conn = self.activeConnections.removeValue(forKey: targetId) {
+                    let connId = ObjectIdentifier(conn)
+                    self.connectionDevices.removeValue(forKey: connId)
+                    self.authenticatedDevices.remove(targetId)
+                    self.deviceNames.removeValue(forKey: targetId)
+                    self.deviceEndpoints.removeValue(forKey: targetId)
+                    conn.cancel()
+                }
+            } else {
+                self.stopHeartbeat()
+                for (_, conn) in self.activeConnections {
+                    conn.cancel()
+                }
+                self.activeConnections.removeAll()
+                self.connectionDevices.removeAll()
+                self.authenticatedDevices.removeAll()
+                self.deviceNames.removeAll()
+                self.deviceEndpoints.removeAll()
+                for (_, conn) in self.pendingConnections {
+                    conn.cancel()
+                }
+                self.pendingConnections.removeAll()
+            }
+            self.refreshConnectionState()
+        }
+    }
+    
+    public func getConnectedDevices() -> [ConnectedDeviceInfo] {
+        queue.sync {
+            return activeConnections.keys.map { id in
+                ConnectedDeviceInfo(
+                    deviceId: id,
+                    deviceName: deviceNames[id] ?? "Android Device",
+                    ip: deviceEndpoints[id] ?? "Local Wi-Fi"
+                )
+            }
         }
     }
     
@@ -78,7 +143,7 @@ public final class NetworkServer: @unchecked Sendable {
                 switch state {
                 case .ready:
                     print("[NacMac-Network] Server listening on port \(self.port)")
-                    self.updateState(.listening(port: self.port.rawValue))
+                    self.refreshConnectionState()
                 case .failed(let error):
                     print("[NacMac-Network] Server listener failed: \(error)")
                     self.delegate?.errorOccurred("Listener failed: \(error.localizedDescription)")
@@ -123,14 +188,8 @@ public final class NetworkServer: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self = self else { return }
             
-            // If already connected, cancel old connection or prioritize new reconnect
-            if let active = self.activeConnection {
-                print("[NacMac-Network] Replacing existing connection with incoming reconnect")
-                active.cancel()
-            }
-            
-            self.activeConnection = conn
-            self.isConnectionAuthenticated = false
+            let connId = ObjectIdentifier(conn)
+            self.pendingConnections[connId] = conn
             
             conn.stateUpdateHandler = { [weak self] state in
                 guard let self = self else { return }
@@ -139,7 +198,6 @@ public final class NetworkServer: @unchecked Sendable {
                     let remoteEndpoint = conn.endpoint
                     print("[NacMac-Network] Inbound socket connected from \(remoteEndpoint)")
                     self.readNextMessage(from: conn)
-                    self.startHeartbeat()
                 case .failed(let err):
                     print("[NacMac-Network] Connection failed: \(err)")
                     self.handleDisconnection(for: conn)
@@ -154,20 +212,25 @@ public final class NetworkServer: @unchecked Sendable {
         }
     }
     
-    private func handleDisconnection(for conn: NWConnection? = nil) {
-        guard let active = self.activeConnection else {
-            // No active connection or server is already stopped; ignore redundant/stale disconnections
-            return
+    private func handleDisconnection(for conn: NWConnection) {
+        let connId = ObjectIdentifier(conn)
+        pendingConnections.removeValue(forKey: connId)
+        
+        if let deviceId = connectionDevices.removeValue(forKey: connId) {
+            if activeConnections[deviceId] === conn {
+                activeConnections.removeValue(forKey: deviceId)
+                authenticatedDevices.remove(deviceId)
+                deviceNames.removeValue(forKey: deviceId)
+                deviceEndpoints.removeValue(forKey: deviceId)
+                print("[NacMac-Network] Device disconnected: \(deviceId). Standing by for auto-reconnect...")
+            }
         }
-        if let conn = conn, conn !== active {
-            // Disconnection was from a superseded or stale connection; do not affect active connection.
-            return
+        
+        conn.cancel()
+        if activeConnections.isEmpty {
+            stopHeartbeat()
         }
-        stopHeartbeat()
-        activeConnection = nil
-        isConnectionAuthenticated = false
-        print("[NacMac-Network] Peer disconnected. Standing by for auto-reconnect...")
-        updateState(.listening(port: port.rawValue))
+        refreshConnectionState()
     }
     
     // MARK: - Length-Prefixed Message Framing
@@ -215,7 +278,7 @@ public final class NetworkServer: @unchecked Sendable {
             }
             
             if let payloadData = data, payloadData.count == length {
-                self.processInboundData(payloadData)
+                self.processInboundData(payloadData, from: conn)
             }
             
             if !isComplete {
@@ -228,31 +291,44 @@ public final class NetworkServer: @unchecked Sendable {
     
     // MARK: - Message Dispatching
     
-    private func processInboundData(_ data: Data) {
+    private func processInboundData(_ data: Data, from conn: NWConnection) {
         guard let envelope = try? JSONDecoder().decode(NacMacEnvelope.self, from: data) else {
             print("[NacMac-Network] Failed to decode envelope")
             return
         }
         
+        let connId = ObjectIdentifier(conn)
+        let deviceId = connectionDevices[connId]
+        let isAuth = (deviceId != nil && authenticatedDevices.contains(deviceId!))
+        
         switch envelope.type {
         case .pairRequest:
-            handlePairRequest(envelope.payload)
+            handlePairRequest(envelope.payload, from: conn)
             
         case .heartbeatPing:
-            sendEnvelope(NacMacEnvelope(type: .heartbeatPong, payload: "{}"))
+            sendEnvelopeToConnection(NacMacEnvelope(type: .heartbeatPong, payload: "{}"), conn: conn)
             
         case .heartbeatPong:
             // Heartbeat acknowledged
             break
             
+        case .clipboardSync:
+            guard isAuth else {
+                print("[NacMac-Security] Blocked unauthorized .clipboardSync")
+                return
+            }
+            ClipboardSyncManager.shared.handleIncoming(envelope.payload)
+            
         case .notification:
-            guard isConnectionAuthenticated else {
+            guard isAuth else {
                 print("[NacMac-Security] Blocked unauthorized .notification from unauthenticated connection")
                 return
             }
             if let payloadData = envelope.payload.data(using: .utf8) {
                 do {
-                    let notif = try JSONDecoder().decode(NotificationPayload.self, from: payloadData)
+                    var notif = try JSONDecoder().decode(NotificationPayload.self, from: payloadData)
+                    notif.deviceId = deviceId
+                    notif.deviceName = deviceId.flatMap { self.deviceNames[$0] }
                     NotificationManager.shared.deliverNotification(notif)
                 } catch {
                     print("[NacMac-Notification] Error decoding notification payload: \(error)")
@@ -260,7 +336,7 @@ public final class NetworkServer: @unchecked Sendable {
             }
             
         case .notificationDismissed:
-            guard isConnectionAuthenticated else {
+            guard isAuth else {
                 print("[NacMac-Security] Blocked unauthorized .notificationDismissed from unauthenticated connection")
                 return
             }
@@ -273,8 +349,46 @@ public final class NetworkServer: @unchecked Sendable {
                 }
             }
             
+        case .notificationAction:
+            guard isAuth else {
+                print("[NacMac-Security] Blocked unauthorized .notificationAction")
+                return
+            }
+            if let payloadData = envelope.payload.data(using: .utf8),
+               let action = try? JSONDecoder().decode(NotificationActionPayload.self, from: payloadData) {
+                print("[NacMac-Notification] Received notification action from device: \(action.notificationKey)")
+            }
+            
+        case .smsConversationsResponse:
+            guard isAuth else { return }
+            if let payloadData = envelope.payload.data(using: .utf8),
+               let resp = try? JSONDecoder().decode(SMSConversationsResponsePayload.self, from: payloadData) {
+                let effectiveResp = resp.deviceId != nil ? resp : SMSConversationsResponsePayload(threads: resp.threads, deviceId: deviceId)
+                Task { @MainActor in
+                    DashboardState.shared.handleSMSConversations(effectiveResp)
+                }
+            }
+            
+        case .smsMessagesResponse:
+            guard isAuth else { return }
+            if let payloadData = envelope.payload.data(using: .utf8),
+               let resp = try? JSONDecoder().decode(SMSMessagesResponsePayload.self, from: payloadData) {
+                Task { @MainActor in
+                    DashboardState.shared.handleSMSMessages(resp)
+                }
+            }
+            
+        case .smsSendStatus:
+            guard isAuth else { return }
+            if let payloadData = envelope.payload.data(using: .utf8),
+               let status = try? JSONDecoder().decode(SMSSendStatusPayload.self, from: payloadData) {
+                Task { @MainActor in
+                    DashboardState.shared.handleSMSSendStatus(status)
+                }
+            }
+            
         case .fileStart:
-            guard isConnectionAuthenticated else {
+            guard isAuth else {
                 print("[NacMac-Security] Blocked unauthorized .fileStart from unauthenticated connection")
                 return
             }
@@ -284,7 +398,7 @@ public final class NetworkServer: @unchecked Sendable {
             }
             
         case .fileChunk:
-            guard isConnectionAuthenticated else {
+            guard isAuth else {
                 print("[NacMac-Security] Blocked unauthorized .fileChunk from unauthenticated connection")
                 return
             }
@@ -294,7 +408,7 @@ public final class NetworkServer: @unchecked Sendable {
             }
             
         case .fileEnd:
-            guard isConnectionAuthenticated else {
+            guard isAuth else {
                 print("[NacMac-Security] Blocked unauthorized .fileEnd from unauthenticated connection")
                 return
             }
@@ -304,7 +418,7 @@ public final class NetworkServer: @unchecked Sendable {
             }
             
         case .fileCancel:
-            guard isConnectionAuthenticated else {
+            guard isAuth else {
                 print("[NacMac-Security] Blocked unauthorized .fileCancel from unauthenticated connection")
                 return
             }
@@ -318,14 +432,13 @@ public final class NetworkServer: @unchecked Sendable {
         }
     }
     
-    private func handlePairRequest(_ payloadString: String) {
+    private func handlePairRequest(_ payloadString: String, from conn: NWConnection) {
         guard let data = payloadString.data(using: .utf8),
               let req = try? JSONDecoder().decode(PairRequestPayload.self, from: data) else {
             return
         }
         
         let success = PairingManager.shared.validatePairRequest(req)
-        self.isConnectionAuthenticated = success
         let resp = PairResponsePayload(
             success: success,
             macName: PairingManager.shared.macName,
@@ -333,12 +446,30 @@ public final class NetworkServer: @unchecked Sendable {
         )
         
         if let respData = try? JSONEncoder().encode(resp), let respJson = String(data: respData, encoding: .utf8) {
-            sendEnvelope(NacMacEnvelope(type: .pairResponse, payload: respJson))
+            sendEnvelopeToConnection(NacMacEnvelope(type: .pairResponse, payload: respJson), conn: conn)
         }
         
         if success {
+            let connId = ObjectIdentifier(conn)
+            pendingConnections.removeValue(forKey: connId)
+            
+            // If already connected with an older connection for this androidId, replace it
+            if let oldConn = activeConnections[req.androidId], oldConn !== conn {
+                print("[NacMac-Network] Replacing existing connection for device: \(req.androidId)")
+                let oldId = ObjectIdentifier(oldConn)
+                connectionDevices.removeValue(forKey: oldId)
+                oldConn.cancel()
+            }
+            
+            activeConnections[req.androidId] = conn
+            connectionDevices[connId] = req.androidId
+            deviceNames[req.androidId] = req.deviceName
+            deviceEndpoints[req.androidId] = endpointToString(conn.endpoint)
+            authenticatedDevices.insert(req.androidId)
+            
             print("[NacMac-Network] Successfully paired with: \(req.deviceName) (\(req.androidId))")
-            updateState(.connected(deviceName: req.deviceName, ip: "Remote Peer"))
+            refreshConnectionState()
+            startHeartbeat()
         } else {
             print("[NacMac-Security] Authentication failed for: \(req.deviceName) (\(req.androidId))")
         }
@@ -346,33 +477,59 @@ public final class NetworkServer: @unchecked Sendable {
     
     // MARK: - Outbound Transmission
     
-    public func sendEnvelope(_ envelope: NacMacEnvelope) {
+    public func sendEnvelope(_ envelope: NacMacEnvelope, to deviceId: String? = nil) {
         queue.async { [weak self] in
-            guard let self = self, let conn = self.activeConnection else { return }
-            guard let payloadData = try? JSONEncoder().encode(envelope) else { return }
-            
-            var length = UInt32(payloadData.count).bigEndian
-            var packet = Data(bytes: &length, count: 4)
-            packet.append(payloadData)
-            
-            conn.send(content: packet, completion: .contentProcessed { error in
-                if let error = error {
-                    print("[NacMac-Network] Send error: \(error)")
+            guard let self = self else { return }
+            if let targetId = deviceId {
+                if let conn = self.activeConnections[targetId] {
+                    self.sendEnvelopeToConnection(envelope, conn: conn)
+                } else {
+                    print("[NacMac-Network] Target device not connected: \(targetId)")
                 }
-            })
+            } else {
+                for conn in self.activeConnections.values {
+                    self.sendEnvelopeToConnection(envelope, conn: conn)
+                }
+            }
         }
     }
     
-    public func sendFile(at url: URL) {
+    public func broadcastEnvelope(_ envelope: NacMacEnvelope, excluding excludedDeviceId: String? = nil) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            for (id, conn) in self.activeConnections {
+                if let excluded = excludedDeviceId, id == excluded {
+                    continue
+                }
+                self.sendEnvelopeToConnection(envelope, conn: conn)
+            }
+        }
+    }
+    
+    private func sendEnvelopeToConnection(_ envelope: NacMacEnvelope, conn: NWConnection) {
+        guard let payloadData = try? JSONEncoder().encode(envelope) else { return }
+        
+        var length = UInt32(payloadData.count).bigEndian
+        var packet = Data(bytes: &length, count: 4)
+        packet.append(payloadData)
+        
+        conn.send(content: packet, completion: .contentProcessed { error in
+            if let error = error {
+                print("[NacMac-Network] Send error: \(error)")
+            }
+        })
+    }
+    
+    public func sendFile(at url: URL, to deviceId: String? = nil) {
         FileTransferManager.shared.sendFile(at: url) { [weak self] envelope in
-            self?.sendEnvelope(envelope)
+            self?.sendEnvelope(envelope, to: deviceId)
         }
     }
     
     // MARK: - Heartbeat Keepalive
     
     private func startHeartbeat() {
-        stopHeartbeat()
+        guard heartbeatTimer == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 10, repeating: 10)
         timer.setEventHandler { [weak self] in
@@ -385,6 +542,33 @@ public final class NetworkServer: @unchecked Sendable {
     private func stopHeartbeat() {
         heartbeatTimer?.cancel()
         heartbeatTimer = nil
+    }
+    
+    private func endpointToString(_ endpoint: NWEndpoint) -> String {
+        switch endpoint {
+        case .hostPort(let host, let port):
+            return "\(host):\(port)"
+        default:
+            return "\(endpoint)"
+        }
+    }
+    
+    private func refreshConnectionState() {
+        let devices = activeConnections.keys.map { id in
+            ConnectedDeviceInfo(
+                deviceId: id,
+                deviceName: deviceNames[id] ?? "Android Device",
+                ip: deviceEndpoints[id] ?? "Local Wi-Fi"
+            )
+        }
+        
+        if devices.isEmpty {
+            updateState(.listening(port: port.rawValue))
+        } else if devices.count == 1, let first = devices.first {
+            updateState(.connected(deviceName: first.deviceName, ip: first.ip))
+        } else {
+            updateState(.multiConnected(devices: devices))
+        }
     }
     
     private func updateState(_ state: ConnectionState) {

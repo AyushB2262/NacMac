@@ -101,6 +101,15 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
         
+        let devices = NetworkServer.shared.getConnectedDevices()
+        if !devices.isEmpty {
+            for dev in devices {
+                let devItem = NSMenuItem(title: "  • \(dev.deviceName) - Online", action: nil, keyEquivalent: "")
+                devItem.isEnabled = false
+                menu.addItem(devItem)
+            }
+        }
+        
         transferMenuItem = NSMenuItem(title: "No active transfers", action: nil, keyEquivalent: "")
         transferMenuItem.isEnabled = false
         menu.addItem(transferMenuItem)
@@ -125,7 +134,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
         
         menu.addItem(NSMenuItem.separator())
         
-        let unpairItem = NSMenuItem(title: "Unpair Current Device", action: #selector(unpairDevice), keyEquivalent: "")
+        let unpairItem = NSMenuItem(title: "Unpair Devices", action: #selector(unpairDevice), keyEquivalent: "")
         unpairItem.target = self
         menu.addItem(unpairItem)
         
@@ -229,21 +238,36 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
                 self.statusMenuItem.title = "Status: Disconnected"
                 self.statusView.isConnected = false
                 DashboardState.shared.isConnected = false
+                DashboardState.shared.refreshState()
+                self.buildMenu()
             case .listening(let port):
-                if let paired = PairingManager.shared.getPairedDevice() {
-                    self.statusMenuItem.title = "Status: Reconnecting to \(paired.deviceName)..."
-                    DashboardState.shared.connectedDeviceName = paired.deviceName
+                let pairedDevices = PairingManager.shared.getPairedDevices()
+                if let first = pairedDevices.first {
+                    self.statusMenuItem.title = "Status: Reconnecting to \(first.deviceName)..."
+                    DashboardState.shared.connectedDeviceName = first.deviceName
                 } else {
                     self.statusMenuItem.title = "Status: Standby (Port \(port))"
                 }
                 self.statusView.isConnected = false
                 DashboardState.shared.isConnected = false
+                DashboardState.shared.refreshState()
+                self.buildMenu()
             case .connected(let deviceName, _):
                 self.statusMenuItem.title = "Status: Connected to \(deviceName)"
                 self.statusView.isConnected = true
                 self.qrWindow?.close()
                 DashboardState.shared.isConnected = true
                 DashboardState.shared.connectedDeviceName = deviceName
+                DashboardState.shared.refreshState()
+                self.buildMenu()
+            case .multiConnected(let devices):
+                self.statusMenuItem.title = "Status: Connected (\(devices.count) Devices)"
+                self.statusView.isConnected = true
+                self.qrWindow?.close()
+                DashboardState.shared.isConnected = true
+                DashboardState.shared.connectedDeviceName = "\(devices.count) Devices Connected"
+                DashboardState.shared.refreshState()
+                self.buildMenu()
             }
         }
     }

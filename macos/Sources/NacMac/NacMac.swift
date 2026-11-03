@@ -29,7 +29,10 @@ final class NacMacApp: NSObject, NSApplicationDelegate {
         // 3. Start Local Network Server & Bonjour Advertising
         NetworkServer.shared.start()
         
-        // 4. Open Desktop Dashboard Window
+        // 4. Start Universal Clipboard Sync Monitor
+        ClipboardSyncManager.shared.start()
+        
+        // 5. Open Desktop Dashboard Window
         DashboardWindowController.shared.show()
         
         let addresses = PairingManager.shared.getLocalIPAddresses()
@@ -38,6 +41,7 @@ final class NacMacApp: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        ClipboardSyncManager.shared.stop()
         NetworkServer.shared.stop()
         print("NacMac terminated cleanly.")
     }
