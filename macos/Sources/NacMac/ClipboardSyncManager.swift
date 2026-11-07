@@ -17,10 +17,10 @@ public final class ClipboardSyncManager: @unchecked Sendable {
             guard let self = self else { return }
             self.stop()
             self.lastChangeCount = NSPasteboard.general.changeCount
-            self.monitorTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+            self.monitorTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
                 self?.checkLocalPasteboard()
             }
-            print("[NacMac-Clipboard] Universal Clipboard monitor started (300ms debounce)")
+            print("[NacMac-Clipboard] Universal Clipboard monitor started (200ms polling)")
         }
     }
     
