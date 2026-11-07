@@ -28,6 +28,7 @@ class DiscoveryClient(
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun processNextResolve() {
         synchronized(resolveQueue) {
             if (isResolving || resolveQueue.isEmpty()) return

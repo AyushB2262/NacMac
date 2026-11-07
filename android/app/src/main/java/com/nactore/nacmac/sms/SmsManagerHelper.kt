@@ -153,7 +153,7 @@ object SmsManagerHelper {
                 arrayOf(Telephony.Sms._ID, Telephony.Sms.THREAD_ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.TYPE),
                 "${Telephony.Sms.THREAD_ID} = ?",
                 arrayOf(threadId.toString()),
-                "${Telephony.Sms.DATE} ASC"
+                "${Telephony.Sms.DATE} DESC"
             )
             cursor?.use { c ->
                 val idIdx = c.getColumnIndex(Telephony.Sms._ID)
@@ -188,7 +188,7 @@ object SmsManagerHelper {
         } catch (e: Exception) {
             Log.e(TAG, "Messages query failed: ${e.message}")
         }
-        return messages
+        return messages.reversed()
     }
 
     fun sendSms(context: Context, recipient: String, message: String): Boolean {

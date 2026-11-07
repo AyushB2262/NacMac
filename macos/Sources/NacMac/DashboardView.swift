@@ -23,6 +23,7 @@ final class DashboardState: ObservableObject {
     
     // SMS Hub State
     @Published var smsThreads: [SMSThreadItem] = []
+    @Published var selectedSMSDeviceId: String? = nil
     @Published var selectedThreadId: Int64? = nil
     @Published var threadMessages: [SMSMessageItem] = []
     @Published var smsSearchText: String = ""
@@ -142,22 +143,30 @@ final class DashboardState: ObservableObject {
     // MARK: - SMS Messaging Actions
     
     func requestSMSConversations() {
-        let target = (targetSendDevice == "ALL" ? nil : targetSendDevice)
+        var target = (targetSendDevice == "ALL" ? nil : targetSendDevice)
+        if target == nil {
+            target = connectedDevices.first?.deviceId
+        }
+        guard let resolvedTarget = target else {
+            isSmsLoading = false
+            return
+        }
         let req = SMSConversationsRequestPayload(limit: 50)
         if let data = try? JSONEncoder().encode(req),
            let str = String(data: data, encoding: .utf8) {
             isSmsLoading = true
-            NetworkServer.shared.sendEnvelope(NacMacEnvelope(type: .smsConversationsRequest, payload: str), to: target)
+            NetworkServer.shared.sendEnvelope(NacMacEnvelope(type: .smsConversationsRequest, payload: str), to: resolvedTarget)
         }
     }
     
     func selectSMSThread(threadId: Int64, toDevice: String? = nil) {
         self.selectedThreadId = threadId
-        let target = toDevice ?? (targetSendDevice == "ALL" ? nil : targetSendDevice)
+        let target = toDevice ?? selectedSMSDeviceId ?? (targetSendDevice == "ALL" ? nil : targetSendDevice)
+        guard let resolvedTarget = target ?? connectedDevices.first?.deviceId else { return }
         let req = SMSMessagesRequestPayload(threadId: threadId, limit: 100)
         if let data = try? JSONEncoder().encode(req),
            let str = String(data: data, encoding: .utf8) {
-            NetworkServer.shared.sendEnvelope(NacMacEnvelope(type: .smsMessagesRequest, payload: str), to: target)
+            NetworkServer.shared.sendEnvelope(NacMacEnvelope(type: .smsMessagesRequest, payload: str), to: resolvedTarget)
         }
     }
     
@@ -165,7 +174,7 @@ final class DashboardState: ObservableObject {
         guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         var target = (targetSendDevice == "ALL" ? nil : targetSendDevice)
         if target == nil {
-            target = connectedDevices.first?.deviceId
+            target = selectedSMSDeviceId ?? connectedDevices.first?.deviceId
         }
         guard let resolvedTarget = target else {
             addLog("No connected phone to send SMS", type: "warning")
@@ -192,7 +201,7 @@ final class DashboardState: ObservableObject {
         self.smsThreads = resp.threads
         self.isSmsLoading = false
         if let devId = resp.deviceId {
-            self.targetSendDevice = devId
+            self.selectedSMSDeviceId = devId
         }
         if self.selectedThreadId == nil, let first = resp.threads.first {
             selectSMSThread(threadId: first.threadId, toDevice: resp.deviceId)
@@ -208,7 +217,7 @@ final class DashboardState: ObservableObject {
     func handleSMSSendStatus(_ status: SMSSendStatusPayload) {
         self.smsStatusMessage = status.message
         if status.success, let tid = status.threadId {
-            selectSMSThread(threadId: tid)
+            selectSMSThread(threadId: tid, toDevice: selectedSMSDeviceId)
         }
     }
     

@@ -68,32 +68,16 @@ class NacMacAccessibilityService : AccessibilityService() {
 
                 Handler(Looper.getMainLooper()).post {
                     val targetContext = NacMacApp.currentActivity ?: instance ?: context.applicationContext
-                    var isDirectlyCopied = false
 
                     try {
                         val cm = targetContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clip = ClipData.newPlainText("NacMac", payload.text)
                         cm.setPrimaryClip(clip)
 
-                        // Verify if background clipboard write was permitted by Android
-                        try {
-                            val current = cm.primaryClip?.getItemAt(0)?.coerceToText(targetContext)?.toString()
-                            if (current == payload.text) {
-                                isDirectlyCopied = true
-                            }
-                        } catch (_: Exception) {}
-
-                        if (isDirectlyCopied) {
-                            lastSyncedHash = hash
-                            Toast.makeText(targetContext, "Copied from Mac", Toast.LENGTH_SHORT).show()
-                            dismissClipboardNotification(targetContext)
-                            Log.i("NacMac-A11y", "Synced incoming clipboard directly to phone (${payload.text.length} chars)")
-                        } else {
-                            // Android 10+ background restriction prevented direct write without window focus.
-                            // Post high-priority notification with 1-tap copy action.
-                            Log.w("NacMac-A11y", "Direct background clipboard write restricted by OS. Posting 1-tap notification.")
-                            showClipboardNotification(targetContext, payload.text)
-                        }
+                        lastSyncedHash = hash
+                        Toast.makeText(targetContext, "Copied from Mac", Toast.LENGTH_SHORT).show()
+                        dismissClipboardNotification(targetContext)
+                        Log.i("NacMac-A11y", "Synced incoming clipboard directly to phone (${payload.text.length} chars)")
                     } catch (e: Exception) {
                         Log.e("NacMac-A11y", "Direct clipboard write exception: ${e.message}. Fallback to notification.")
                         showClipboardNotification(targetContext, payload.text)

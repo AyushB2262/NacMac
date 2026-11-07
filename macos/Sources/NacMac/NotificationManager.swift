@@ -2,7 +2,7 @@ import Foundation
 @preconcurrency import UserNotifications
 import AppKit
 
-public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNotificationCenterDelegate, NSUserNotificationCenterDelegate {
+public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNotificationCenterDelegate {
     public static let shared = NotificationManager()
     
     private let cacheDir: URL
@@ -18,7 +18,6 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         super.init()
         
-        NSUserNotificationCenter.default.delegate = self
         if hasBundle {
             UNUserNotificationCenter.current().delegate = self
             requestAuthorization()
@@ -88,19 +87,6 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         }
     }
     
-    // NSUserNotificationCenterDelegate to display banner even when active
-    @available(macOS, deprecated: 11.0, message: "Legacy fallback")
-    public func userNotificationCenter(_ center: NSUserNotificationCenter, shouldPresent notification: NSUserNotification) -> Bool {
-        return true
-    }
-
-    @available(macOS, deprecated: 11.0, message: "Legacy fallback")
-    public func userNotificationCenter(_ center: NSUserNotificationCenter, didActivate notification: NSUserNotification) {
-        if let userInfo = notification.userInfo {
-            handleNotificationAction(userInfo: userInfo)
-        }
-    }
-
     private func handleNotificationAction(userInfo: [AnyHashable: Any]) {
         if let filePath = userInfo["filePath"] as? String, !filePath.isEmpty {
             let fileURL = URL(fileURLWithPath: filePath)
@@ -276,17 +262,15 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         print("[NacMac-Notification] Dismissed notification id: \(id)")
     }
     
-    @available(macOS, deprecated: 11.0, message: "Legacy fallback")
     public func fallbackDisplay(title: String, body: String, filePath: String? = nil) {
         DispatchQueue.main.async {
-            let notif = NSUserNotification()
-            notif.title = title
-            notif.informativeText = body
-            notif.soundName = NSUserNotificationDefaultSoundName
-            if let filePath = filePath {
-                notif.userInfo = ["filePath": filePath]
+            let escapedTitle = title.replacingOccurrences(of: "\"", with: "\\\"")
+            let escapedBody = body.replacingOccurrences(of: "\"", with: "\\\"")
+            let script = "display notification \"\(escapedBody)\" with title \"\(escapedTitle)\""
+            if let appleScript = NSAppleScript(source: script) {
+                var errorDict: NSDictionary?
+                appleScript.executeAndReturnError(&errorDict)
             }
-            NSUserNotificationCenter.default.deliver(notif)
         }
     }
 }

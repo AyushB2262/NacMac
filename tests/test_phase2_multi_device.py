@@ -152,10 +152,8 @@ def run_tests():
             qr_data = json.load(f)
         shared_secret = qr_data["secret"]
     else:
-        print("[*] Using active NacMac server process on port 52840...")
-        with open(qr_path, "r") as f:
-            qr_data = json.load(f)
-        shared_secret = qr_data["secret"]
+        print("[SKIP] Port 52840 is in use by a live NacMac session; refusing to modify real pairing state.")
+        sys.exit(0)
 
     print(f"[*] Mac Auth Secret: {shared_secret[:8]}... ({qr_data.get('macName', 'Mac')})")
 

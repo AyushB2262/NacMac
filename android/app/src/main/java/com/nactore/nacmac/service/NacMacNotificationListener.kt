@@ -178,6 +178,7 @@ class NacMacNotificationListener : NotificationListenerService() {
         }
         if (text.isNullOrEmpty()) {
             // Android MessagingStyle messages (WhatsApp, Signal, Telegram, Google Messages)
+            @Suppress("DEPRECATION")
             val messages = extras?.get("android.messages")
             if (messages is Array<*> && messages.isNotEmpty()) {
                 val lastMsg = messages.lastOrNull()

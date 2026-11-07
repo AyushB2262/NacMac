@@ -161,6 +161,8 @@ public final class PairingManager: @unchecked Sendable {
         defer { lock.unlock() }
         pairedDevices.removeAll { $0.androidId == androidId }
         savePairedDevices()
+        activeSecret = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        saveActiveQRPayload()
     }
 
     public func unpair() {

@@ -43,6 +43,7 @@ class ConnectionManager private constructor(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     val activeConnections = ConcurrentHashMap<String, MacConnection>()
+    private val connectingMacIds = ConcurrentHashMap.newKeySet<String>()
 
     private val _status = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Disconnected)
     val status: StateFlow<ConnectionStatus> = _status
@@ -62,12 +63,10 @@ class ConnectionManager private constructor(private val context: Context) {
                     connectToMac(candidate)
                 }
             } else {
-                for (paired in pairedMacs) {
-                    if (!activeConnections.containsKey(paired.macId)) {
-                        val candidate = paired.copy(lastKnownIp = ip, port = port)
-                        val ok = connectToMac(candidate)
-                        if (ok) break
-                    }
+                val matchedByIp = pairedMacs.find { it.lastKnownIp == ip }
+                if (matchedByIp != null && !activeConnections.containsKey(matchedByIp.macId)) {
+                    val candidate = matchedByIp.copy(port = port)
+                    connectToMac(candidate)
                 }
             }
         }
@@ -143,6 +142,7 @@ class ConnectionManager private constructor(private val context: Context) {
 
     private suspend fun connectToMac(paired: PairedMac): Boolean = withContext(Dispatchers.IO) {
         if (activeConnections.containsKey(paired.macId)) return@withContext true
+        if (!connectingMacIds.add(paired.macId)) return@withContext false
         try {
             val s = Socket()
             s.tcpNoDelay = true
@@ -193,6 +193,8 @@ class ConnectionManager private constructor(private val context: Context) {
         } catch (e: Exception) {
             Log.d(TAG, "Socket connect exception for ${paired.macName}: ${e.message}")
             false
+        } finally {
+            connectingMacIds.remove(paired.macId)
         }
     }
 
@@ -214,7 +216,7 @@ class ConnectionManager private constructor(private val context: Context) {
             } catch (e: Exception) {
                 Log.d(TAG, "Connection lost in read loop for ${conn.macName}: ${e.message}")
             } finally {
-                disconnectMacInternal(conn.macId)
+                disconnectMacInternal(conn.macId, conn)
             }
         }
     }
@@ -302,7 +304,7 @@ class ConnectionManager private constructor(private val context: Context) {
                     sendRawEnvelope(NacMacEnvelope(NacMacMessageType.HEARTBEAT_PING, "{}"), conn.outStream)
                 } catch (e: Exception) {
                     Log.d(TAG, "Heartbeat failed for ${conn.macName}: ${e.message}")
-                    disconnectMacInternal(conn.macId)
+                    disconnectMacInternal(conn.macId, conn)
                     break
                 }
             }
@@ -352,8 +354,12 @@ class ConnectionManager private constructor(private val context: Context) {
         }
     }
 
-    private fun disconnectMacInternal(macId: String) {
-        val conn = activeConnections.remove(macId) ?: return
+    private fun disconnectMacInternal(macId: String, expected: MacConnection? = null) {
+        val conn = if (expected != null) {
+            if (activeConnections.remove(macId, expected)) expected else return
+        } else {
+            activeConnections.remove(macId) ?: return
+        }
         try {
             conn.readJob?.cancel()
             conn.heartbeatJob?.cancel()
