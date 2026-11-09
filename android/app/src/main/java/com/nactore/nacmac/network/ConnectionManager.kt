@@ -12,9 +12,11 @@ import com.nactore.nacmac.transfer.FileTransferWorker
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.channels.Channel
 import org.json.JSONObject
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
@@ -33,8 +35,10 @@ data class MacConnection(
     val socket: Socket,
     val inStream: DataInputStream,
     val outStream: DataOutputStream,
+    val sendChannel: Channel<NacMacEnvelope> = Channel(32),
     var readJob: Job? = null,
-    var heartbeatJob: Job? = null
+    var heartbeatJob: Job? = null,
+    var senderJob: Job? = null
 )
 
 class ConnectionManager private constructor(private val context: Context) {
@@ -148,6 +152,7 @@ class ConnectionManager private constructor(private val context: Context) {
             s.tcpNoDelay = true
             s.keepAlive = true
             s.connect(InetSocketAddress(paired.lastKnownIp, paired.port), 3500)
+            s.soTimeout = 5000 // 5-second handshake read timeout
 
             val out = DataOutputStream(s.getOutputStream())
             val inS = DataInputStream(s.getInputStream())
@@ -161,15 +166,25 @@ class ConnectionManager private constructor(private val context: Context) {
             val envelope = NacMacEnvelope(NacMacMessageType.PAIR_REQUEST, pairReq.toString())
             sendRawEnvelope(envelope, out)
 
-            // Read response
+            // Read response with bounded size check
             val len = inS.readInt()
+            if (len <= 0 || len > 64 * 1024) {
+                throw IOException("Invalid handshake frame length: $len")
+            }
             val buf = ByteArray(len)
             inS.readFully(buf)
             val respEnvelope = NacMacEnvelope.fromJSON(String(buf, Charsets.UTF_8))
 
             if (respEnvelope?.type == NacMacMessageType.PAIR_RESPONSE) {
                 val respObj = JSONObject(respEnvelope.payload)
+                val returnedMacId = respObj.optString("macId", "")
+                if (returnedMacId.isNotEmpty() && returnedMacId != paired.macId) {
+                    Log.e(TAG, "Mac identity verification failed! Expected ${paired.macId}, got $returnedMacId")
+                    s.close()
+                    return@withContext false
+                }
                 if (respObj.optBoolean("success", false)) {
+                    s.soTimeout = 0 // Remove timeout for persistent connection
                     deviceStore.savePairedMac(paired)
                     val conn = MacConnection(
                         macId = paired.macId,
@@ -181,6 +196,7 @@ class ConnectionManager private constructor(private val context: Context) {
                         outStream = out
                     )
                     activeConnections[paired.macId] = conn
+                    startSender(conn)
                     startReading(conn)
                     startHeartbeat(conn)
                     updateStatus()
@@ -285,12 +301,27 @@ class ConnectionManager private constructor(private val context: Context) {
                         )
                         val respEnvelope = NacMacEnvelope(NacMacMessageType.SMS_SEND_STATUS, resp.toJSON().toString())
                         sendEnvelope(respEnvelope, conn.macId)
-                        Log.i(TAG, "Handled SMS_SEND to ${req.recipient} (success: $ok)")
+                        Log.i(TAG, "Handled SMS_SEND dispatch (success: $ok)")
                     }
                 }
             }
             else -> {
                 Log.d(TAG, "Received message: ${envelope.type} from ${conn.macName}")
+            }
+        }
+    }
+
+    private fun startSender(conn: MacConnection) {
+        conn.senderJob?.cancel()
+        conn.senderJob = scope.launch(Dispatchers.IO) {
+            for (envelope in conn.sendChannel) {
+                try {
+                    sendRawEnvelope(envelope, conn.outStream)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Send error on connection to ${conn.macName}: ${e.message}")
+                    disconnectMacInternal(conn.macId, conn)
+                    break
+                }
             }
         }
     }
@@ -317,10 +348,9 @@ class ConnectionManager private constructor(private val context: Context) {
                 val conn = activeConnections[targetMacId]
                 if (conn != null) {
                     try {
-                        sendRawEnvelope(envelope, conn.outStream)
+                        conn.sendChannel.send(envelope)
                     } catch (e: Exception) {
-                        Log.e(TAG, "Send failed to Mac $targetMacId: ${e.message}")
-                        disconnectMacInternal(targetMacId)
+                        Log.e(TAG, "Send queue failed for Mac $targetMacId: ${e.message}")
                     }
                 } else {
                     Log.w(TAG, "Target Mac $targetMacId not currently connected")
@@ -328,12 +358,24 @@ class ConnectionManager private constructor(private val context: Context) {
             } else {
                 for ((macId, conn) in activeConnections) {
                     try {
-                        sendRawEnvelope(envelope, conn.outStream)
+                        conn.sendChannel.send(envelope)
                     } catch (e: Exception) {
-                        Log.e(TAG, "Broadcast failed to Mac $macId: ${e.message}")
-                        disconnectMacInternal(macId)
+                        Log.e(TAG, "Broadcast send queue failed for Mac $macId: ${e.message}")
                     }
                 }
+            }
+        }
+    }
+
+    suspend fun sendEnvelopeOrdered(envelope: NacMacEnvelope, targetMacId: String? = null) {
+        if (targetMacId != null) {
+            val conn = activeConnections[targetMacId]
+            if (conn != null) {
+                conn.sendChannel.send(envelope)
+            }
+        } else {
+            for ((_, conn) in activeConnections) {
+                conn.sendChannel.send(envelope)
             }
         }
     }
@@ -361,6 +403,8 @@ class ConnectionManager private constructor(private val context: Context) {
             activeConnections.remove(macId) ?: return
         }
         try {
+            conn.sendChannel.close()
+            conn.senderJob?.cancel()
             conn.readJob?.cancel()
             conn.heartbeatJob?.cancel()
             conn.socket.close()

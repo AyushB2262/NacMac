@@ -85,7 +85,7 @@ class NacMacNotificationListener : NotificationListenerService() {
                             RemoteInput.setResultsSource(intent, RemoteInput.SOURCE_FREE_FORM_INPUT)
                         }
                         targetPendingIntent.send(context, 0, intent)
-                        Log.i("NacMac-NotifListener", "Dispatched RemoteInput inline reply: \"${payload.replyText}\" for ${sbn.packageName}")
+                        Log.i("NacMac-NotifListener", "Dispatched RemoteInput inline reply for ${sbn.packageName}")
                     } else {
                         targetPendingIntent.send()
                     }
@@ -257,7 +257,7 @@ class NacMacNotificationListener : NotificationListenerService() {
 
         val envelope = NacMacEnvelope(NacMacMessageType.NOTIFICATION, payload.toJSON().toString())
         ConnectionManager.getInstance(applicationContext).sendEnvelope(envelope)
-        Log.i(TAG, "Forwarded notification: [$appName] $title: $body (actions: ${actionsList.size})")
+        Log.i(TAG, "Forwarded notification from $appName (id: $notifId, actions: ${actionsList.size})")
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {

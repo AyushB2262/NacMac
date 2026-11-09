@@ -192,7 +192,7 @@ Syncs notification dismissal from macOS back to Android.
 
 1. Zero Phoning Home: NacMac contains no analytics SDKs, telemetry probes, or third-party trackers.
 2. Local Subnet Boundary: Network sockets bind strictly to local network interfaces (`en0`, `wlan0`). Incoming packets without validated authentication secrets are dropped immediately.
-3. Secure Key Storage: Pairing credentials are saved using `EncryptedSharedPreferences` on Android and sandboxed local defaults on macOS.
+3. Secure Key Storage: Pairing credentials are saved using private local app storage (`allowBackup="false"` on Android) and sandboxed local defaults on macOS.
 4. Stream Hygiene: File streams are verified byte-for-byte against SHA-256 digests. If any byte is altered in transit, the transfer fails and the file is deleted immediately.
 
 ---

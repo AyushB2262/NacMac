@@ -263,14 +263,18 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
     }
     
     public func fallbackDisplay(title: String, body: String, filePath: String? = nil) {
-        DispatchQueue.main.async {
-            let escapedTitle = title.replacingOccurrences(of: "\"", with: "\\\"")
-            let escapedBody = body.replacingOccurrences(of: "\"", with: "\\\"")
-            let script = "display notification \"\(escapedBody)\" with title \"\(escapedTitle)\""
-            if let appleScript = NSAppleScript(source: script) {
-                var errorDict: NSDictionary?
-                appleScript.executeAndReturnError(&errorDict)
-            }
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Safe execution via argv arguments: never parse title or body as AppleScript source
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            process.arguments = [
+                "-e", "on run argv",
+                "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
+                "-e", "end run",
+                title,
+                body
+            ]
+            try? process.run()
         }
     }
 }

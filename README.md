@@ -62,7 +62,7 @@
 ### Pair in 5 Seconds
 1. Click the **NacMac** icon in your macOS Menu Bar or open the Dashboard to display the dynamic QR code.
 2. In the Android app, tap **Scan QR Code**.
-3. Point your camera at your Mac screen. The devices will handshake and show **Secure & Online** immediately.
+3. Point your camera at your Mac screen. The devices will handshake and show **Connected & Online** immediately.
 
 ---
 
@@ -279,8 +279,8 @@ NacMac follows native macOS application conventions:
 ## Security & Privacy by Design
 
 - **Zero Phoning Home:** No telemetry, no crash reporting SDKs, no external network requests.
-- **Strictly LAN-Bound:** The TCP listener binds exclusively to local network interfaces. It rejects incoming connections lacking matching dynamic authentication secrets.
-- **In-Memory & Encrypted Credentials:** Pairing keys are stored in secure local preferences (`EncryptedSharedPreferences` on Android, local application sandbox on macOS).
+- **Strictly LAN-Bound:** The TCP listener operates over local Wi-Fi (port 52840 + mDNS). It rejects incoming connections lacking matching dynamic authentication secrets.
+- **Private Local Storage:** Pairing keys and device records are stored in private app storage (`allowBackup="false"` on Android, local application sandbox on macOS) with dynamic rotation on pairing.
 - **Temporary File Hygiene:** Incomplete file streams are written to `.part` files and purged immediately if canceled or if hash validation fails.
 
 ---

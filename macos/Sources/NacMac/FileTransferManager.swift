@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import CryptoKit
 
 public struct ActiveTransferProgress: Sendable {
     public let transferId: String
@@ -42,14 +43,42 @@ public final class FileTransferManager: @unchecked Sendable {
         try? FileManager.default.createDirectory(at: downloadDirectory, withIntermediateDirectories: true)
     }
     
+    private func getUniqueFileURL(for targetURL: URL) -> URL {
+        guard FileManager.default.fileExists(atPath: targetURL.path) else {
+            return targetURL
+        }
+        let dir = targetURL.deletingLastPathComponent()
+        let ext = targetURL.pathExtension
+        let base = targetURL.deletingPathExtension().lastPathComponent
+        var counter = 1
+        while true {
+            let newName = ext.isEmpty ? "\(base) (\(counter))" : "\(base) (\(counter)).\(ext)"
+            let newURL = dir.appendingPathComponent(newName)
+            if !FileManager.default.fileExists(atPath: newURL.path) {
+                return newURL
+            }
+            counter += 1
+        }
+    }
+    
     // MARK: - Receiving Chunks from Android
     
     public func handleFileStart(_ payload: FileStartPayload) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         
-        let targetURL = downloadDirectory.appendingPathComponent(payload.filename)
-        let partURL = downloadDirectory.appendingPathComponent("\(payload.filename).part")
+        let rawFilename = (payload.filename as NSString).lastPathComponent
+        let cleanFilename = rawFilename.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanFilename.isEmpty, cleanFilename != ".", cleanFilename != ".." else {
+            print("[NacMac-File] Rejected invalid or dangerous filename: \(payload.filename)")
+            return false
+        }
+        let targetURL = downloadDirectory.appendingPathComponent(cleanFilename)
+        guard targetURL.standardizedFileURL.path.hasPrefix(downloadDirectory.standardizedFileURL.path) else {
+            print("[NacMac-File] Path traversal detected: \(payload.filename)")
+            return false
+        }
+        let partURL = downloadDirectory.appendingPathComponent("\(cleanFilename).part")
         
         // Remove existing part file if any
         try? FileManager.default.removeItem(at: partURL)
@@ -68,7 +97,7 @@ public final class FileTransferManager: @unchecked Sendable {
             receivedBytes: 0,
             startTime: Date()
         )
-        print("[NacMac-File] Started receiving file: \(payload.filename) (\(payload.size) bytes)")
+        print("[NacMac-File] Started receiving file: \(cleanFilename) (\(payload.size) bytes)")
         return true
     }
     
@@ -117,15 +146,37 @@ public final class FileTransferManager: @unchecked Sendable {
         
         try? entry.handle.close()
         
-        // Finalize part file to destination
-        try? FileManager.default.removeItem(at: entry.targetURL)
+        // 1. Size verification
+        guard entry.receivedBytes == entry.totalBytes else {
+            print("[NacMac-File] Size mismatch: expected \(entry.totalBytes), received \(entry.receivedBytes)")
+            try? FileManager.default.removeItem(at: entry.partURL)
+            delegate?.transferDidFail(transferId: payload.transferId, error: "File size mismatch")
+            return false
+        }
+        
+        // 2. SHA-256 integrity verification
+        if let expectedSha = payload.sha256, !expectedSha.isEmpty {
+            if let fileData = try? Data(contentsOf: entry.partURL) {
+                let actualSha = SHA256.hash(data: fileData).map { String(format: "%02x", $0) }.joined()
+                if actualSha.lowercased() != expectedSha.lowercased() {
+                    print("[NacMac-File] SHA-256 mismatch! Expected \(expectedSha), got \(actualSha)")
+                    try? FileManager.default.removeItem(at: entry.partURL)
+                    delegate?.transferDidFail(transferId: payload.transferId, error: "SHA-256 verification failed")
+                    return false
+                }
+                print("[NacMac-File] SHA-256 verified successfully: \(actualSha)")
+            }
+        }
+        
+        // 3. Avoid clobbering: pick unique filename if file already exists
+        let finalURL = getUniqueFileURL(for: entry.targetURL)
         do {
-            try FileManager.default.moveItem(at: entry.partURL, to: entry.targetURL)
-            print("[NacMac-File] Successfully completed file transfer: \(entry.targetURL.path)")
+            try FileManager.default.moveItem(at: entry.partURL, to: finalURL)
+            print("[NacMac-File] Successfully completed file transfer: \(finalURL.path)")
             
             delegate?.transferDidComplete(
                 transferId: payload.transferId,
-                filename: entry.targetURL.lastPathComponent,
+                filename: finalURL.lastPathComponent,
                 isReceiving: true
             )
             
@@ -135,13 +186,14 @@ public final class FileTransferManager: @unchecked Sendable {
                 packageName: "com.nactore.nacmac.file",
                 appName: "NacMac",
                 title: "File Received",
-                body: "\(entry.targetURL.lastPathComponent) saved to Downloads",
-                filePath: entry.targetURL.path
+                body: "\(finalURL.lastPathComponent) saved to Downloads",
+                filePath: finalURL.path
             )
             NotificationManager.shared.deliverNotification(notif)
             return true
         } catch {
             print("[NacMac-File] Failed to finalize file: \(error)")
+            try? FileManager.default.removeItem(at: entry.partURL)
             return false
         }
     }
@@ -189,6 +241,7 @@ public final class FileTransferManager: @unchecked Sendable {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             var offset: Int64 = 0
+            var hasher = SHA256()
             
             while offset < size {
                 self.lock.lock()
@@ -207,6 +260,7 @@ public final class FileTransferManager: @unchecked Sendable {
                 let toRead = Int(min(Int64(chunkSize), size - offset))
                 let chunkData = handle.readData(ofLength: toRead)
                 if chunkData.isEmpty { break }
+                hasher.update(data: chunkData)
                 
                 let chunkPayload = FileChunkPayload(
                     transferId: transferId,
@@ -236,14 +290,16 @@ public final class FileTransferManager: @unchecked Sendable {
             
             try? handle.close()
             
-            // Send FILE_END
-            let endPayload = FileEndPayload(transferId: transferId, totalBytes: size)
+            // Compute digest and send in FILE_END
+            let digest = hasher.finalize()
+            let sha256Hex = digest.map { String(format: "%02x", $0) }.joined()
+            let endPayload = FileEndPayload(transferId: transferId, totalBytes: size, sha256: sha256Hex)
             if let d = try? JSONEncoder().encode(endPayload), let j = String(data: d, encoding: .utf8) {
                 sendChunkHandler(NacMacEnvelope(type: .fileEnd, payload: j))
             }
             
             self.delegate?.transferDidComplete(transferId: transferId, filename: filename, isReceiving: false)
-            print("[NacMac-File] Finished sending \(filename) (\(size) bytes)")
+            print("[NacMac-File] Finished sending \(filename) (\(size) bytes, SHA-256: \(sha256Hex))")
         }
     }
 }

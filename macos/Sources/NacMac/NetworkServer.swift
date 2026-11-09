@@ -189,7 +189,21 @@ public final class NetworkServer: @unchecked Sendable {
             guard let self = self else { return }
             
             let connId = ObjectIdentifier(conn)
+            if self.pendingConnections.count >= 8 {
+                print("[NacMac-Network] Max pending connection limit reached (8), rejecting")
+                conn.cancel()
+                return
+            }
             self.pendingConnections[connId] = conn
+            
+            // 5-second unauthenticated drop timeout
+            self.queue.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                guard let self = self else { return }
+                if self.pendingConnections[connId] != nil {
+                    print("[NacMac-Network] Pending connection authentication timeout, closing")
+                    self.handleDisconnection(for: conn)
+                }
+            }
             
             conn.stateUpdateHandler = { [weak self] state in
                 guard let self = self else { return }
@@ -257,8 +271,10 @@ public final class NetworkServer: @unchecked Sendable {
             }
             
             let length = UInt32(bigEndian: headerData.withUnsafeBytes { $0.load(as: UInt32.self) })
-            guard length > 0 && length < 100 * 1024 * 1024 else { // sanity cap 100MB
-                print("[NacMac-Network] Invalid message length: \(length)")
+            let isAuthenticated = (self.connectionDevices[ObjectIdentifier(conn)] != nil)
+            let maxAllowedLength: UInt32 = isAuthenticated ? (100 * 1024 * 1024) : (64 * 1024)
+            guard length > 0 && length <= maxAllowedLength else {
+                print("[NacMac-Network] Invalid message length: \(length) (auth: \(isAuthenticated))")
                 self.handleDisconnection(for: conn)
                 return
             }
@@ -442,7 +458,8 @@ public final class NetworkServer: @unchecked Sendable {
         let resp = PairResponsePayload(
             success: success,
             macName: PairingManager.shared.macName,
-            message: success ? "Pairing verified" : "Invalid secret key"
+            message: success ? "Pairing verified" : "Invalid secret key",
+            macId: PairingManager.shared.macId
         )
         
         if let respData = try? JSONEncoder().encode(resp), let respJson = String(data: respData, encoding: .utf8) {

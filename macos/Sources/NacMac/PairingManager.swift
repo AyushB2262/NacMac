@@ -9,7 +9,8 @@ public final class PairingManager: @unchecked Sendable {
     private let legacyStorageURL: URL
     private let qrPayloadURL: URL
     private var pairedDevices: [PairedDeviceRecord] = []
-    private var activeSecret: String
+    public private(set) var activeSecret: String
+    private var activeSecretCreatedAt: Date = Date()
     public let macId: String
     public let macName: String
     public let defaultPort: Int = 52840
@@ -112,20 +113,32 @@ public final class PairingManager: @unchecked Sendable {
         return nsImage
     }
     
+    public func rotateActiveSecret() {
+        self.activeSecret = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        self.activeSecretCreatedAt = Date()
+        saveActiveQRPayload()
+    }
+    
     public func validatePairRequest(_ req: PairRequestPayload) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         
         let matchesActiveSecret = (req.authSecret == activeSecret)
+        let isExpired = Date().timeIntervalSince(activeSecretCreatedAt) > 600 // 10 minute TTL
         let matchedIndex = pairedDevices.firstIndex(where: { $0.androidId == req.androidId && $0.secret == req.authSecret })
         
-        if matchesActiveSecret || matchedIndex != nil {
+        if matchesActiveSecret && !isExpired {
             let record = PairedDeviceRecord(androidId: req.androidId, deviceName: req.deviceName, secret: req.authSecret)
             if let idx = pairedDevices.firstIndex(where: { $0.androidId == req.androidId }) {
                 pairedDevices[idx] = record
             } else {
                 pairedDevices.append(record)
             }
+            savePairedDevices()
+            return true
+        } else if let idx = matchedIndex {
+            let record = PairedDeviceRecord(androidId: req.androidId, deviceName: req.deviceName, secret: req.authSecret)
+            pairedDevices[idx] = record
             savePairedDevices()
             return true
         }
@@ -208,9 +221,6 @@ public final class PairingManager: @unchecked Sendable {
         if let multiData = try? Data(contentsOf: multiStorageURL),
            let records = try? JSONDecoder().decode([PairedDeviceRecord].self, from: multiData) {
             self.pairedDevices = records
-            if let last = records.last {
-                self.activeSecret = last.secret
-            }
             return
         }
 
@@ -218,13 +228,9 @@ public final class PairingManager: @unchecked Sendable {
         if let legacyData = try? Data(contentsOf: legacyStorageURL) {
             if let record = try? JSONDecoder().decode(PairedDeviceRecord.self, from: legacyData) {
                 self.pairedDevices = [record]
-                self.activeSecret = record.secret
                 savePairedDevices()
             } else if let records = try? JSONDecoder().decode([PairedDeviceRecord].self, from: legacyData) {
                 self.pairedDevices = records
-                if let last = records.last {
-                    self.activeSecret = last.secret
-                }
                 savePairedDevices()
             }
         }

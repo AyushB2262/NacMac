@@ -1044,38 +1044,6 @@ class MainActivity : AppCompatActivity() {
     private fun handleIncomingShareIntent(intent: Intent?) {
         if (intent == null) return
         
-        // Handle pairing payload intent
-        val pairRaw = intent.getStringExtra("pair_payload") ?: intent.getStringExtra("pair_payload_b64")
-        if (pairRaw != null) {
-            val text = try {
-                if (pairRaw.trim().startsWith("{")) {
-                    pairRaw.trim()
-                } else {
-                    String(android.util.Base64.decode(pairRaw, android.util.Base64.DEFAULT), Charsets.UTF_8)
-                }
-            } catch (e: Exception) {
-                pairRaw
-            }
-            
-            val payload = PairingQRPayload.fromJSON(text)
-            if (payload != null) {
-                val primaryIp = payload.ips.firstOrNull { it == "10.0.2.2" }
-                    ?: payload.ips.firstOrNull { it != "127.0.0.1" } ?: "10.0.2.2"
-                deviceStore.savePairedMac(
-                    PairedMac(
-                        macId = payload.macId,
-                        macName = payload.macName,
-                        lastKnownIp = primaryIp,
-                        port = payload.port,
-                        secret = payload.secret
-                    )
-                )
-                Toast.makeText(this, "Paired with ${payload.macName}!", Toast.LENGTH_SHORT).show()
-                connectionManager.startAutoConnect()
-                checkAndPromptNotificationAccess()
-            }
-        }
-        
         if (Intent.ACTION_SEND == intent.action) {
             val uri: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)

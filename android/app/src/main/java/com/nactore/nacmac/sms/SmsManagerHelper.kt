@@ -218,7 +218,7 @@ object SmsManagerHelper {
                 context.contentResolver.insert(Telephony.Sms.Sent.CONTENT_URI, values)
             } catch (_: Exception) {}
 
-            Log.i(TAG, "SMS successfully dispatched to $recipient")
+            Log.i(TAG, "SMS successfully dispatched")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send SMS to $recipient: ${e.message}")

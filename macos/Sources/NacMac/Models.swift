@@ -72,11 +72,13 @@ public struct PairResponsePayload: Codable, Sendable {
     public let success: Bool
     public let macName: String
     public let message: String
+    public let macId: String?
     
-    public init(success: Bool, macName: String, message: String) {
+    public init(success: Bool, macName: String, message: String, macId: String? = nil) {
         self.success = success
         self.macName = macName
         self.message = message
+        self.macId = macId
     }
 }
 
@@ -249,10 +251,12 @@ public struct FileChunkPayload: Codable, Sendable {
 public struct FileEndPayload: Codable, Sendable {
     public let transferId: String
     public let totalBytes: Int64
+    public let sha256: String?
     
-    public init(transferId: String, totalBytes: Int64) {
+    public init(transferId: String, totalBytes: Int64, sha256: String? = nil) {
         self.transferId = transferId
         self.totalBytes = totalBytes
+        self.sha256 = sha256
     }
 }
 

@@ -28,7 +28,7 @@
 
     <application
         android:name=".NacMacApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="NacMac"
         android:roundIcon="@mipmap/ic_launcher_round"

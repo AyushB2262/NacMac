@@ -131,13 +131,17 @@ data class PairRequestPayload(
 data class PairResponsePayload(
     val success: Boolean,
     val macName: String,
-    val message: String
+    val message: String,
+    val macId: String = ""
 ) {
     fun toJSON(): JSONObject {
         val obj = JSONObject()
         obj.put("success", success)
         obj.put("macName", macName)
         obj.put("message", message)
+        if (macId.isNotEmpty()) {
+            obj.put("macId", macId)
+        }
         return obj
     }
 
@@ -148,7 +152,8 @@ data class PairResponsePayload(
                 PairResponsePayload(
                     success = obj.getBoolean("success"),
                     macName = obj.optString("macName", ""),
-                    message = obj.optString("message", "")
+                    message = obj.optString("message", ""),
+                    macId = obj.optString("macId", "")
                 )
             } catch (e: Exception) {
                 null
@@ -377,12 +382,16 @@ data class FileChunkPayload(
 
 data class FileEndPayload(
     val transferId: String,
-    val totalBytes: Long
+    val totalBytes: Long,
+    val sha256: String? = null
 ) {
     fun toJSON(): JSONObject {
         val obj = JSONObject()
         obj.put("transferId", transferId)
         obj.put("totalBytes", totalBytes)
+        if (sha256 != null) {
+            obj.put("sha256", sha256)
+        }
         return obj
     }
 
@@ -392,7 +401,8 @@ data class FileEndPayload(
                 val obj = JSONObject(jsonString)
                 FileEndPayload(
                     transferId = obj.getString("transferId"),
-                    totalBytes = obj.getLong("totalBytes")
+                    totalBytes = obj.getLong("totalBytes"),
+                    sha256 = obj.optString("sha256").takeIf { it.isNotEmpty() }
                 )
             } catch (e: Exception) {
                 null
