@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ayushb2262.github.io/NacMac/sitemap.xml

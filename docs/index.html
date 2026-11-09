@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NacMac: Open-Source AirDrop &amp; Continuity Alternative for Android &amp; Mac</title>
+  <meta name="description" content="Instant high-speed P2P file transfers, real-time notification mirroring, and clipboard sync between Android and Mac over local Wi-Fi. 100% private, zero cloud servers, free and open source.">
+  <meta name="keywords" content="AirDrop alternative, Android to Mac, peer to peer file transfer, notification mirroring, clipboard sync, open source, local Wi-Fi, LocalSend alternative, KDE Connect Mac, AirDroid alternative">
+  <meta name="author" content="Ayush Bhatt">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://ayushb2262.github.io/NacMac/">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://ayushb2262.github.io/NacMac/">
+  <meta property="og:title" content="NacMac: Open-Source AirDrop &amp; Continuity Alternative for Android &amp; Mac">
+  <meta property="og:description" content="Instant P2P file transfers, real-time notification mirroring, and clipboard sync between Android and Mac over local Wi-Fi. 100% private, zero cloud servers.">
+  <meta property="og:image" content="https://ayushb2262.github.io/NacMac/assets/banner.svg">
+  <meta property="og:site_name" content="NacMac">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://ayushb2262.github.io/NacMac/">
+  <meta name="twitter:title" content="NacMac: Open-Source AirDrop &amp; Continuity Alternative for Android &amp; Mac">
+  <meta name="twitter:description" content="Instant P2P file transfers, real-time notification mirroring, and clipboard sync between Android and Mac over local Wi-Fi. 100% private, zero cloud servers.">
+  <meta name="twitter:image" content="https://ayushb2262.github.io/NacMac/assets/banner.svg">
+
+  <link rel="icon" type="image/png" href="assets/logo.png">
+
+  <!-- JSON-LD Structured Data: SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "NacMac",
+    "operatingSystem": "macOS 13.0+, Android 8.0+",
+    "applicationCategory": "UtilitiesApplication",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "description": "Open-source peer-to-peer continuity between Android and macOS. High-speed local Wi-Fi file transfers, notification mirroring with bidirectional dismissal, universal clipboard sync, and SMS hub with zero cloud servers.",
+    "softwareVersion": "1.0.0",
+    "license": "https://opensource.org/licenses/MIT",
+    "author": {
+      "@type": "Person",
+      "name": "Ayush Bhatt",
+      "url": "https://github.com/AyushB2262"
+    },
+    "downloadUrl": [
+      "https://github.com/AyushB2262/NacMac/releases/download/v1.0.0/NacMac-v1.0.0.dmg",
+      "https://github.com/AyushB2262/NacMac/releases/download/v1.0.0/NacMac-v1.0.0.apk"
+    ],
+    "featureList": [
+      "Instant P2P file transfer up to 100+ MB/s over LAN",
+      "Real-time Android notification mirroring on macOS",
+      "Bidirectional notification dismissal",
+      "Universal clipboard synchronization",
+      "Zero-configuration Bonjour mDNS discovery",
+      "5-second dynamic QR code pairing",
+      "Cryptographic SHA-256 integrity validation",
+      "Multi-device Android management",
+      "100% private with zero cloud telemetry"
+    ]
+  }
+  </script>
+
+  <!-- JSON-LD Structured Data: FAQPage -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is NacMac and how does it work?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "NacMac is a free, open-source peer-to-peer continuity application bridging Android and macOS over local Wi-Fi. It enables fast local file transfers, native notification mirroring, universal clipboard sync, and SMS queries without third-party cloud servers or accounts."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How is NacMac different from Apple AirDrop?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Apple AirDrop is strictly limited to Apple devices (iPhone, iPad, Mac). NacMac brings AirDrop-class peer-to-peer file transfer and continuity to cross-platform setups connecting Android phones with macOS computers."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How does NacMac compare to LocalSend and KDE Connect on macOS?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Unlike LocalSend, which only handles manual file transfers, NacMac provides continuous ambient notification mirroring, universal clipboard sync, and multi-device management. Unlike KDE Connect, NacMac is built natively in Swift 6 and Kotlin without requiring heavy Qt or Linux emulation runtimes on macOS."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Do files or notifications pass through any external servers?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. NacMac communicates strictly over direct TCP connections on your local network (port 52840). Zero bytes leave your local Wi-Fi router, and there are no telemetry trackers or cloud accounts."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How fast are file transfers with NacMac?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "NacMac streams files in 256 KB chunks at full LAN speeds, typically reaching 50 to 100+ MB/s over 5 GHz Wi-Fi. This is more than 300 times faster than Bluetooth file sharing (200 KB/s)."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is NacMac completely free and open source?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. NacMac is licensed under the permissive MIT License. Both the macOS application and Android companion app are open source and available on GitHub."
+        }
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --bg-surface: #1e293b;
+      --bg-surface-elevated: #334155;
+      --accent-amber: #f97316;
+      --accent-amber-glow: rgba(249, 115, 22, 0.25);
+      --accent-emerald: #10b981;
+      --accent-blue: #38bdf8;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(249, 115, 22, 0.5);
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --container-max: 1200px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: var(--accent-blue);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    a:hover {
+      color: var(--accent-amber);
+    }
+
+    .container {
+      max-width: var(--container-max);
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header & Navigation */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      background-color: rgba(15, 23, 42, 0.85);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .nav-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 72px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: var(--text-main);
+    }
+
+    .brand img {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-main);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+      color: #ffffff;
+      box-shadow: 0 4px 14px var(--accent-amber-glow);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #fb923c 0%, #f97316 100%);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background-color: var(--bg-surface);
+      color: var(--text-main);
+      border-color: var(--border-subtle);
+    }
+
+    .btn-secondary:hover {
+      background-color: var(--bg-surface-elevated);
+      color: var(--text-main);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 96px 0 64px;
+      text-align: center;
+      position: relative;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 9999px;
+      background-color: rgba(249, 115, 22, 0.1);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      color: var(--accent-amber);
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+
+    .badge-pill .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--accent-amber);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.4; }
+      100% { opacity: 1; }
+    }
+
+    .hero h1 {
+      font-size: 3.25rem;
+      line-height: 1.15;
+      font-weight: 800;
+      margin-bottom: 20px;
+      letter-spacing: -0.02em;
+    }
+
+    .hero h1 span.gradient {
+      background: linear-gradient(135deg, #f97316 20%, #38bdf8 80%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p.lead {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 780px;
+      margin: 0 auto 36px;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 48px;
+    }
+
+    .metrics-ribbon {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-top: 40px;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 24px;
+    }
+
+    .metric-item {
+      text-align: center;
+    }
+
+    .metric-val {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: var(--accent-amber);
+      margin-bottom: 4px;
+    }
+
+    .metric-lbl {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Preview Showcase */
+    .showcase {
+      padding: 40px 0 80px;
+    }
+
+    .showcase-banner {
+      width: 100%;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-subtle);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      margin-bottom: 32px;
+    }
+
+    .showcase-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 24px;
+      align-items: center;
+    }
+
+    .showcase-card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      text-align: center;
+    }
+
+    .showcase-card img {
+      width: 100%;
+      border-radius: var(--radius-sm);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+
+    .showcase-card h3 {
+      font-size: 1.15rem;
+      margin: 16px 0 8px;
+    }
+
+    .showcase-card p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    /* Features Grid */
+    .features {
+      padding: 80px 0;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .section-title {
+      text-align: center;
+      margin-bottom: 56px;
+    }
+
+    .section-title h2 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+
+    .section-title p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      max-width: 650px;
+      margin: 0 auto;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+    }
+
+    .feature-box {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 32px;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .feature-box:hover {
+      transform: translateY(-3px);
+      border-color: var(--border-focus);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-sm);
+      background: rgba(249, 115, 22, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 20px;
+    }
+
+    .feature-box h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .feature-box p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    /* Comparison Table */
+    .comparison {
+      padding: 80px 0;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .table-container {
+      overflow-x: auto;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      margin-top: 32px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    th {
+      background-color: var(--bg-surface-elevated);
+      color: var(--text-main);
+      font-weight: 700;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .highlight-col {
+      background-color: rgba(249, 115, 22, 0.08);
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    /* FAQ Section */
+    .faq {
+      padding: 80px 0;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .faq-list {
+      max-width: 850px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    details.faq-item {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 20px 24px;
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+    }
+
+    details.faq-item:hover {
+      border-color: var(--border-focus);
+    }
+
+    details.faq-item summary {
+      font-size: 1.1rem;
+      font-weight: 700;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    details.faq-item summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details.faq-item summary::after {
+      content: "+";
+      font-size: 1.4rem;
+      color: var(--accent-amber);
+      font-weight: 400;
+    }
+
+    details.faq-item[open] summary::after {
+      content: "-";
+    }
+
+    details.faq-item p {
+      margin-top: 16px;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 56px 0 36px;
+      background-color: #0b1120;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 40px;
+      margin-bottom: 40px;
+    }
+
+    .footer-brand h4 {
+      color: var(--text-main);
+      font-size: 1.2rem;
+      margin-bottom: 12px;
+    }
+
+    .footer-col h5 {
+      color: var(--text-main);
+      font-size: 0.95rem;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .footer-col ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .footer-bottom {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 2.25rem; }
+      .showcase-grid { grid-template-columns: 1fr; }
+      .footer-grid { grid-template-columns: 1fr; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header>
+    <div class="container nav-wrapper">
+      <div class="brand">
+        <img src="assets/logo.png" alt="NacMac Logo">
+        <span>NacMac</span>
+      </div>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#benchmarks">Benchmarks</a></li>
+        <li><a href="#comparison">Comparison</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="https://github.com/AyushB2262/NacMac">GitHub</a></li>
+        <li><a href="llms.txt">llms.txt</a></li>
+      </ul>
+      <div>
+        <a href="https://github.com/AyushB2262/NacMac/releases" class="btn btn-primary">Download v1.0.0</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <main>
+    <section class="hero">
+      <div class="container">
+        <div class="badge-pill">
+          <span class="dot"></span>
+          <span>Open-Source v1.0.0 Release · 100% Local P2P</span>
+        </div>
+        <h1>
+          The Native <span class="gradient">AirDrop &amp; Continuity</span><br>
+          Alternative for Android and Mac.
+        </h1>
+        <p class="lead">
+          High-speed local Wi-Fi file transfers, real-time notification mirroring with bidirectional dismissal, universal clipboard sync, and SMS management. Zero cloud servers. Zero account logins. 100% private.
+        </p>
+        <div class="hero-actions">
+          <a href="https://github.com/AyushB2262/NacMac/releases/download/v1.0.0/NacMac-v1.0.0.dmg" class="btn btn-primary">Download for macOS (.dmg)</a>
+          <a href="https://github.com/AyushB2262/NacMac/releases/download/v1.0.0/NacMac-v1.0.0.apk" class="btn btn-secondary">Download Android APK</a>
+          <a href="https://github.com/AyushB2262/NacMac" class="btn btn-secondary">View on GitHub</a>
+        </div>
+
+        <div class="metrics-ribbon" id="benchmarks">
+          <div class="metric-item">
+            <div class="metric-val">50-100+ MB/s</div>
+            <div class="metric-lbl">Local LAN Speed</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-val">0 Bytes</div>
+            <div class="metric-lbl">Cloud Telemetry</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-val">&lt; 5 Seconds</div>
+            <div class="metric-lbl">Dynamic QR Pairing</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-val">SHA-256</div>
+            <div class="metric-lbl">Cryptographic Hash</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Visual Showcase -->
+    <section class="showcase">
+      <div class="container">
+        <div class="showcase-grid">
+          <div class="showcase-card">
+            <img src="assets/mac-dashboard.png" alt="NacMac macOS Native Workstation Dashboard">
+            <h3>macOS Native Workstation Hub</h3>
+            <p>Menu bar resident with live connection dots, instant drag-and-drop file target, verified SHA-256 queues, and native system notification banners.</p>
+          </div>
+          <div class="showcase-card">
+            <img src="assets/android-companion.png" alt="NacMac Android Companion App">
+            <h3>Android Companion &amp; Pairing</h3>
+            <p>Crafted in Kotlin with Jetpack Compose &amp; Material 3. Single-tap CameraX QR pairing, foreground auto-reconnect, and verified transfer history.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Core Features Grid -->
+    <section class="features" id="features">
+      <div class="container">
+        <div class="section-title">
+          <h2>Engineered for Privacy, Speed, and Simplicity</h2>
+          <p>No browser engines, no Electron bloat, and no third-party cloud intermediaries. Built native in Swift 6 and Kotlin.</p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-box">
+            <div class="feature-icon">⚡</div>
+            <h3>High-Throughput P2P File Transfer</h3>
+            <p>Stream gigabytes of photos, videos, and archives over your local Wi-Fi. Transmissions are sliced into 256 KB framed chunks with live MB/s monitoring and cancellation support.</p>
+          </div>
+          <div class="feature-box">
+            <div class="feature-icon">🔔</div>
+            <h3>Real-Time Notification Mirroring</h3>
+            <p>Intercepts alerts on Android (including MessagingStyle and app icons) and renders them as native macOS notification banners with bidirectional dismissal back to your phone.</p>
+          </div>
+          <div class="feature-box">
+            <div class="feature-icon">📋</div>
+            <h3>Universal Clipboard Synchronization</h3>
+            <p>Copy text, links, or code on your Mac and immediately paste on your phone, or vice versa. Built-in debouncing prevents circular broadcasts and keeps latency minimal.</p>
+          </div>
+          <div class="feature-box">
+            <div class="feature-icon">🛡️</div>
+            <h3>Cryptographic SHA-256 Verification</h3>
+            <p>Every transfer calculates a streaming SHA-256 digest at the source and validates it on the receiver before saving. Never worry about corrupted bytes or silent network drops.</p>
+          </div>
+          <div class="feature-box">
+            <div class="feature-icon">📡</div>
+            <h3>Zero-Config Bonjour Discovery</h3>
+            <p>macOS publishes an mDNS service (_nacmac._tcp.local) on port 52840. The Android companion automatically discovers workstations without typing manual IP addresses.</p>
+          </div>
+          <div class="feature-box">
+            <div class="feature-icon">📱</div>
+            <h3>Multi-Device Management &amp; SMS Hub</h3>
+            <p>Pair multiple Android devices to a single Mac workstation. View battery states, transfer logs, and query SMS threads directly from your desktop interface.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Competitive Comparison -->
+    <section class="comparison" id="comparison">
+      <div class="container">
+        <div class="section-title">
+          <h2>How NacMac Compares to the Alternatives</h2>
+          <p>See why NacMac is the ideal continuity bridge for macOS and Android power users.</p>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Capability</th>
+                <th class="highlight-col">NacMac</th>
+                <th>LocalSend</th>
+                <th>KDE Connect</th>
+                <th>AirDroid</th>
+                <th>Bluetooth Obex</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Target Platforms</strong></td>
+                <td class="highlight-col"><strong>macOS &amp; Android</strong></td>
+                <td>Cross-Platform</td>
+                <td>Cross-Platform</td>
+                <td>Multi-Platform</td>
+                <td>Universal</td>
+              </tr>
+              <tr>
+                <td><strong>macOS Native Stack</strong></td>
+                <td class="highlight-col"><strong>Swift 6 &amp; SwiftUI</strong></td>
+                <td>Flutter Runtime</td>
+                <td>Qt / X11 Runtime</td>
+                <td>Electron / Web</td>
+                <td>Legacy OS Push</td>
+              </tr>
+              <tr>
+                <td><strong>Data Route</strong></td>
+                <td class="highlight-col"><strong>100% Local LAN (0% Cloud)</strong></td>
+                <td>100% Local LAN</td>
+                <td>100% Local LAN</td>
+                <td>Cloud Relay Servers</td>
+                <td>Direct Bluetooth</td>
+              </tr>
+              <tr>
+                <td><strong>Account / Login Required</strong></td>
+                <td class="highlight-col"><strong>Zero (No Account)</strong></td>
+                <td>Zero (No Account)</td>
+                <td>Zero (No Account)</td>
+                <td>Mandatory Sign-In</td>
+                <td>None</td>
+              </tr>
+              <tr>
+                <td><strong>Transfer Speed</strong></td>
+                <td class="highlight-col"><strong>50-100+ MB/s (LAN)</strong></td>
+                <td>30-80 MB/s (LAN)</td>
+                <td>20-50 MB/s (LAN)</td>
+                <td>Cloud-Capped / Throttled</td>
+                <td>~200 KB/s</td>
+              </tr>
+              <tr>
+                <td><strong>SHA-256 Verification</strong></td>
+                <td class="highlight-col"><strong>Automated &amp; Mandatory</strong></td>
+                <td>Optional</td>
+                <td>Custom Checksum</td>
+                <td>Varies</td>
+                <td>Basic CRC</td>
+              </tr>
+              <tr>
+                <td><strong>Notification Mirroring</strong></td>
+                <td class="highlight-col"><strong>Native macOS Banners</strong></td>
+                <td>Not Supported</td>
+                <td>Inconsistent on Mac</td>
+                <td>Web Popups</td>
+                <td>Not Supported</td>
+              </tr>
+              <tr>
+                <td><strong>Bidirectional Dismissal</strong></td>
+                <td class="highlight-col"><strong>Yes (Synced to Phone)</strong></td>
+                <td>Not Supported</td>
+                <td>Partial</td>
+                <td>Paid Subscription</td>
+                <td>Not Supported</td>
+              </tr>
+              <tr>
+                <td><strong>Universal Clipboard</strong></td>
+                <td class="highlight-col"><strong>Yes (Ambient &amp; Debounced)</strong></td>
+                <td>Manual Send Only</td>
+                <td>Yes</td>
+                <td>Paid Subscription</td>
+                <td>Not Supported</td>
+              </tr>
+              <tr>
+                <td><strong>License</strong></td>
+                <td class="highlight-col"><strong>MIT (Open Source)</strong></td>
+                <td>GPL-3.0</td>
+                <td>GPL-2.0</td>
+                <td>Proprietary</td>
+                <td>Standard</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq" id="faq">
+      <div class="container">
+        <div class="section-title">
+          <h2>Frequently Asked Questions</h2>
+          <p>Everything you need to know about NacMac architecture, security, and setup.</p>
+        </div>
+        <div class="faq-list">
+          <details class="faq-item" open>
+            <summary>What is NacMac and how does it work?</summary>
+            <p>NacMac is a free, open-source peer-to-peer continuity system connecting Android devices to macOS machines over your local Wi-Fi network. It enables high-speed file transfers (50-100+ MB/s), real-time notification mirroring with bidirectional dismissal, universal clipboard sync, and SMS queries without third-party cloud servers or accounts.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary>How is NacMac different from Apple AirDrop?</summary>
+            <p>Apple AirDrop is exclusively restricted to Apple hardware (iPhone, iPad, Mac) and does not support Android. NacMac delivers an AirDrop-like seamless experience specifically tailored for users with an Android phone and a macOS workstation.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary>How does NacMac compare to LocalSend and KDE Connect?</summary>
+            <p>LocalSend focuses exclusively on manual file transfers; it does not offer ambient notification mirroring, clipboard synchronization, or SMS management. KDE Connect on macOS requires heavy Qt runtimes and often fails to render native macOS notification banners properly. NacMac is purpose-built in native Swift 6 and SwiftUI for macOS, and Kotlin with Jetpack Compose for Android.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary>Do my files or notifications pass through any external servers?</summary>
+            <p>Never. Communication occurs strictly over direct TCP connections on your local Wi-Fi router (port 52840). Zero bytes ever leave your local subnet, and NacMac contains zero analytics SDKs or telemetry probes.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary>Does NacMac work without an active internet connection?</summary>
+            <p>Yes. NacMac only requires a local network connection, such as a home Wi-Fi network, an office LAN, or a personal mobile Wi-Fi hotspot. No active internet connectivity or WAN access is needed.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary>How do I bypass the macOS Gatekeeper warning on first launch?</summary>
+            <p>Because open-source community builds are not notarized with a paid Apple Developer certificate, macOS may show an unidentified developer dialog. You can clear the quarantine flag by running this command in Terminal: <code>xattr -dr com.apple.quarantine /Applications/NacMac.app</code>.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary>Is NacMac completely free and open source?</summary>
+            <p>Yes. NacMac is licensed under the permissive MIT License. You can inspect the source code, build it locally from source, or contribute features directly on GitHub.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <h4>NacMac</h4>
+          <p>Open-source peer-to-peer continuity bridging Android and macOS. Fast, private, local-first.</p>
+          <p style="margin-top: 12px; font-size: 0.85rem; color: #64748b;">Licensed under the MIT License. Developed by Ayush Bhatt.</p>
+        </div>
+        <div class="footer-col">
+          <h5>Resources</h5>
+          <ul>
+            <li><a href="https://github.com/AyushB2262/NacMac">GitHub Repository</a></li>
+            <li><a href="https://github.com/AyushB2262/NacMac/releases">Releases &amp; Downloads</a></li>
+            <li><a href="https://github.com/AyushB2262/NacMac/blob/main/docs/SPECIFICATION.md">Wire Protocol Spec</a></li>
+            <li><a href="llms.txt">llms.txt (AI Index)</a></li>
+            <li><a href="llms-full.txt">llms-full.txt (Full AI Spec)</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h5>Community</h5>
+          <ul>
+            <li><a href="https://github.com/AyushB2262/NacMac/issues">Report an Issue</a></li>
+            <li><a href="https://github.com/AyushB2262/NacMac/pulls">Contribute Code</a></li>
+            <li><a href="sitemap.xml">XML Sitemap</a></li>
+            <li><a href="robots.txt">Robots.txt</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div>&copy; 2026 NacMac Project. Open source under MIT License.</div>
+        <div>Built with Swift 6, Kotlin, and SwiftUI.</div>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -12,18 +12,24 @@
   <img src="https://img.shields.io/badge/Release-v1.0.0-059669?style=flat-square" alt="v1.0.0">
 </p>
 
+<h2 align="center">
+  The Open-Source AirDrop &amp; Continuity Alternative for Android and Mac
+</h2>
+
 <h3 align="center">
-  Instant P2P file transfers, real-time notification mirroring, and clipboard sync between Android and Mac.<br>
+  Instant high-speed P2P file transfers, real-time notification mirroring, universal clipboard sync, and SMS hub.<br>
   Zero cloud servers. Zero account logins. 100% private on your local Wi-Fi.
 </h3>
 
 <p align="center">
+  <a href="https://ayushb2262.github.io/NacMac/"><b>Live Web Portal</b></a> ·
   <a href="#download--quick-start"><b>Download v1.0.0</b></a> ·
   <a href="#see-it-work"><b>See It Work</b></a> ·
   <a href="#features"><b>Features</b></a> ·
-  <a href="#the-philosophy"><b>The Philosophy</b></a> ·
+  <a href="#comparison-why-nacmac"><b>Why NacMac?</b></a> ·
+  <a href="#frequently-asked-questions-faq"><b>FAQ</b></a> ·
   <a href="#architecture--wire-protocol"><b>Architecture</b></a> ·
-  <a href="#building-from-source"><b>Build from Source</b></a> ·
+  <a href="llms.txt"><b>llms.txt</b></a> ·
   <a href="docs/SPECIFICATION.md"><b>Protocol Spec</b></a>
 </p>
 
@@ -120,22 +126,26 @@ Until now, the only choices have been sluggish Bluetooth transfers, proprietary 
 1. **100% Local-First:** No accounts, no subscriptions, no cloud relays, no tracking. Communication stays strictly on your local Wi-Fi via high-throughput TCP sockets (`port 52840`).
 2. **Zero-Configuration Discovery:** Pair once in five seconds with an ephemeral dynamic QR code. After that, Bonjour / mDNS (`_nacmac._tcp.local`) silently re-establishes connections whenever you sit down at your desk.
 3. **High-Throughput Streaming:** 256 KB framed chunked streaming with live speed calculation, mid-stream cancellation, and cryptographic SHA-256 integrity verification.
-4. **Native Ergonomics:** Crafted native from the ground up — Swift 6, AppKit, and SwiftUI on macOS; Kotlin, Jetpack Compose, and Material 3 on Android. No Electron, no browser engines, no memory bloat.
+4. **Native Ergonomics:** Crafted native from the ground up: Swift 6, AppKit, and SwiftUI on macOS; Kotlin, Jetpack Compose, and Material 3 on Android. No Electron, no browser engines, no memory bloat.
 
 ---
 
 ## Comparison: Why NacMac?
 
-| Capability | NacMac | AirDroid / Cloud Apps | Quick Share (Windows) | Bluetooth Obex |
-| :--- | :---: | :---: | :---: | :---: |
-| **Data Leaves Local Network** | **Never (0% Cloud)** | Yes (Cloud servers) | Varies | No |
-| **Account / Sign-In Required** | **None** | Mandatory | Google/Samsung | No |
-| **macOS Native App** | **Swift 6 & SwiftUI** | Web / Electron | Not Available | Native system |
-| **Android Native App** | **Kotlin & Material 3** | Java / Mixed | Samsung / Google only | Native |
-| **Transfer Speed** | **Wi-Fi LAN Speed (50–100+ MB/s)** | Capped by Internet / Tier | LAN speed | ~200 KB/s (Painful) |
-| **Integrity Verification** | **SHA-256 Cryptographic Hash** | Varies | Proprietary | Checksum only |
-| **Notification Mirroring** | **Native macOS Banners** | Web Popups | Windows only | Not Available |
-| **Open Source** | **MIT Licensed** | Proprietary | Proprietary | Open standard |
+| Feature / Capability | NacMac | LocalSend | KDE Connect | AirDroid | Bluetooth Obex |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Target Platforms** | **macOS & Android** | Cross-platform | Cross-platform | Multi-platform | Universal |
+| **macOS Native Stack** | **Swift 6 & SwiftUI** | Flutter Runtime | Qt / X11 Runtime | Electron / Web | Legacy System |
+| **Data Privacy** | **100% Local (0% Cloud)** | 100% Local | 100% Local | Remote Cloud Relays | Local Only |
+| **Account Required** | **None (Zero Login)** | None | None | Mandatory Registration | None |
+| **Transfer Speed** | **50-100+ MB/s (LAN)** | 30-80 MB/s (LAN) | 20-50 MB/s (LAN) | Throttled / Cloud-Capped | ~200 KB/s |
+| **Integrity Verification** | **SHA-256 Hash Digest** | Optional | Custom | Varies | Basic Checksum |
+| **Notification Mirroring** | **Native macOS Banners** | Not Available | Inconsistent on Mac | Web Popups | Not Available |
+| **Bidirectional Dismissal**| **Yes (Synced to Phone)** | Not Available | Partial | Paid Subscription | Not Available |
+| **Universal Clipboard** | **Yes (Ambient & Debounced)** | Manual Send Only | Yes | Paid Subscription ($30/yr) | Not Available |
+| **Multi-Device Support** | **Yes (Hub Architecture)** | Manual Switch | Yes | Paid Subscription | 1-to-1 Only |
+| **Discovery & Pairing** | **5-Sec Dynamic QR Code** | Manual IP Entry | Manual PIN Entry | Account Login | Manual Bluetooth Pair |
+| **Open Source License** | **MIT Licensed** | GPL-3.0 | GPL-2.0 | Proprietary | Standard |
 
 ---
 
@@ -272,6 +282,49 @@ NacMac follows native macOS application conventions:
 - **Strictly LAN-Bound:** The TCP listener binds exclusively to local network interfaces. It rejects incoming connections lacking matching dynamic authentication secrets.
 - **In-Memory & Encrypted Credentials:** Pairing keys are stored in secure local preferences (`EncryptedSharedPreferences` on Android, local application sandbox on macOS).
 - **Temporary File Hygiene:** Incomplete file streams are written to `.part` files and purged immediately if canceled or if hash validation fails.
+
+---
+
+## Frequently Asked Questions (FAQ)
+
+### What is NacMac?
+NacMac is a free, open-source peer-to-peer continuity suite designed specifically for users pairing an Android smartphone with a macOS workstation. It bridges file transfers, native notification mirroring with bidirectional dismissal, universal clipboard synchronization, and SMS management over local Wi-Fi without third-party cloud servers.
+
+### How is NacMac different from Apple AirDrop?
+Apple AirDrop is restricted exclusively to Apple devices (iOS, iPadOS, macOS). NacMac brings AirDrop-like seamless local continuity to cross-platform setups connecting Android phones with macOS workstations.
+
+### How does NacMac compare to LocalSend or KDE Connect?
+- **vs LocalSend:** LocalSend focuses strictly on manual file sharing. NacMac provides complete ambient continuity: background notification mirroring, debounced universal clipboard sync, and SMS queries alongside high-speed file transfers.
+- **vs KDE Connect:** KDE Connect on macOS depends on heavy Qt / X11 runtimes and often fails to display native macOS notification banners properly. NacMac is built natively in Swift 6 and SwiftUI for macOS and Kotlin with Material 3 for Android.
+
+### Do my files or notifications pass through any external servers?
+No. All transmissions travel exclusively across direct TCP connections on your local Wi-Fi network (port 52840). Zero bytes ever leave your local router, and the application includes zero analytics or telemetry SDKs.
+
+### How fast are NacMac file transfers?
+Over standard 5 GHz or Wi-Fi 6 home networks, transfers reach speeds between 50 and 100+ MB/s. Transferring a 1 GB video typically takes under 15 seconds.
+
+### Does NacMac work without an active internet connection?
+Yes. NacMac operates completely offline. It works over home Wi-Fi networks, office LANs, Ethernet subnets, or personal mobile Wi-Fi hotspots.
+
+### What are the supported operating system versions?
+- **macOS:** macOS 13.0 (Ventura), macOS 14.0 (Sonoma), and macOS 15.0+ (Sequoia).
+- **Android:** Android 8.0 (Oreo, API 26) through Android 15+.
+
+### How do I bypass the macOS Gatekeeper warning on first launch?
+Because community open-source releases are distributed outside the paid Apple Developer Program, macOS Gatekeeper may show an unidentified developer warning. Clear the quarantine attribute with:
+```bash
+xattr -dr com.apple.quarantine /Applications/NacMac.app
+```
+
+### Is NacMac completely free and open source?
+Yes. NacMac is licensed under the permissive MIT License. Both the macOS application and Android companion are fully open source.
+
+---
+
+## Discovery & Topics
+
+For developers and contributors searching for continuity solutions:
+`airdrop-alternative` · `android-mac-continuity` · `p2p-file-transfer` · `notification-mirror` · `clipboard-sync` · `local-first` · `privacy-first` · `zeroconf` · `mdns` · `swiftui` · `jetpack-compose` · `kotlin` · `swift-6`
 
 ---
 
