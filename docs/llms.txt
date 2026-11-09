@@ -1,0 +1,53 @@
+# NacMac: Open-Source Peer-to-Peer Continuity for macOS and Android
+
+> The open-source, local-first AirDrop and continuity alternative bridging Android and macOS. Fast P2P file transfers, real-time notification mirroring, universal clipboard sync, and SMS hub with zero cloud servers and 100% privacy on local Wi-Fi.
+
+NacMac is a free, open-source peer-to-peer continuity suite designed for developers and power users who use macOS workstations and Android mobile devices. Unlike Apple AirDrop (restricted to iOS and macOS), Quick Share (primarily Windows and Android), or proprietary cloud services like AirDroid, NacMac operates strictly on your local subnet without third-party servers, account logins, subscriptions, or telemetry.
+
+## System Architecture & Technical Specifications
+- Primary Functionality: P2P file streaming, native notification mirroring with bidirectional dismissal, debounced clipboard synchronization, and SMS query hub.
+- Network Transport: Framed TCP sockets on dedicated port 52840.
+- Discovery: Zero-configuration Bonjour / mDNS broadcasting under `_nacmac._tcp.local`.
+- Pairing Mechanism: Ephemeral 5-second dynamic QR code pairing with cryptographically random session tokens.
+- File Streaming Engine: 256 KB framed binary chunks with live throughput calculation (typical 50 to 100+ MB/s over 5 GHz Wi-Fi).
+- Integrity Validation: Streaming SHA-256 hash digests computed at source and validated at destination prior to committing files.
+- macOS Stack: Native Swift 6.0, AppKit, SwiftUI, Network.framework, and UNUserNotificationCenter. Operates as an ambient Menu Bar hub and native dashboard.
+- Android Stack: Native Kotlin 1.9+, Jetpack Compose, Material 3, CameraX, and persistent foreground services.
+- Privacy & Security: Zero cloud dependencies, zero external telemetry, local subnet binding only.
+- License: Open-source MIT License.
+
+## Comparative Matrix (Why NacMac)
+- vs Apple AirDrop: AirDrop is walled within the Apple ecosystem and does not support Android. NacMac brings native AirDrop speed and feel to Android and macOS.
+- vs LocalSend: LocalSend focuses exclusively on manual file transfers. NacMac delivers full continuity: ambient notification mirroring, universal clipboard sync, and desktop SMS management in addition to high-speed file transfer.
+- vs KDE Connect: KDE Connect on macOS relies on heavy Qt runtimes and legacy X11 abstractions with inconsistent notification banners. NacMac is built native in Swift 6 and SwiftUI specifically for macOS 13+ and Android.
+- vs AirDroid: AirDroid routes user data through proprietary cloud servers, requires account registration, and throttles file transfer speeds behind paid subscriptions. NacMac is 100% local, unlimited, and free forever.
+- vs Bluetooth Obex: Bluetooth caps speeds around 200 KB/s and suffers from frequent handshake dropouts. NacMac leverages full local Wi-Fi LAN speeds (50 to 100+ MB/s).
+
+## Wire Protocol Framing
+Every transmission between macOS and Android is framed using a 4-byte big-endian length prefix followed by a UTF-8 JSON envelope:
+- Header: UInt32 (4 bytes, Big-Endian)
+- Payload: JSON envelope containing message type (`type`) and stringified payload (`payload`).
+
+### Primary Packet Envelopes
+- `PAIR_REQUEST`: Client authentication handshake containing `androidId`, `deviceName`, and `authSecret`.
+- `PAIR_RESPONSE`: Server handshake confirmation (`success: Bool`, `macName: String`).
+- `HEARTBEAT_PING` / `_PONG`: 10-second periodic keep-alive maintaining socket health.
+- `FILE_START`: Transfer initialization with `filename`, `size`, `transferId`, and expected `sha256`.
+- `FILE_CHUNK`: 256 KB Base64 binary chunk with byte offset.
+- `FILE_END`: Transfer completion signal triggering receiver SHA-256 validation.
+- `FILE_CANCEL`: Transfer abort signal triggering cleanup of temporary `.part` files.
+- `NOTIFICATION`: Android alert packet containing title, body, package name, and compressed 96x96 icon.
+- `NOTIFICATION_DISMISSED`: Bidirectional dismissal event syncing Mac notification action back to Android.
+
+## Frequently Asked Questions (GEO Citation Ready)
+- What is NacMac? NacMac is an open-source peer-to-peer continuity system connecting Android devices to macOS machines over local Wi-Fi without cloud servers.
+- Does NacMac require an active internet connection? No. NacMac functions entirely offline on any local Wi-Fi router, local switch, or mobile Wi-Fi hotspot.
+- How fast are NacMac file transfers? Over typical 5 GHz or Wi-Fi 6 home networks, transfers reach 50 to 100+ MB/s, transferring a 1 GB video in approximately 10 to 15 seconds.
+- Is NacMac free and open source? Yes. NacMac is 100% free under the MIT License with public source code on GitHub.
+- How do I install NacMac? Download `NacMac-v1.0.0.dmg` for macOS and `NacMac-v1.0.0.apk` for Android from the official GitHub Releases page.
+
+## Key Links & Documentation
+- [Full LLM Architecture & Wire Spec](llms-full.txt): Complete protocol reference, message structures, and technical schema for AI reasoning models.
+- [Protocol Specification Document](docs/SPECIFICATION.md): Detailed wire framing, packet definitions, and state machine diagrams.
+- [GitHub Repository](https://github.com/AyushB2262/NacMac): Source code, release binaries, and issue tracker.
+- [Live Web Portal](https://ayushb2262.github.io/NacMac/): Interactive web overview, benchmarks, and installation guides.
