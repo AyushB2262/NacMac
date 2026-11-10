@@ -31,6 +31,7 @@ class NacMacNotificationListener : NotificationListenerService() {
 
     companion object {
         private val activeNotificationCache = ConcurrentHashMap<String, StatusBarNotification>()
+        private val appIconCache = ConcurrentHashMap<String, String>()
         @Volatile
         var instance: NacMacNotificationListener? = null
             private set
@@ -219,13 +220,15 @@ class NacMacNotificationListener : NotificationListenerService() {
             return
         }
 
-        // Extract app icon as compact 96x96 PNG base64
-        val iconBase64 = try {
-            val drawable = pm.getApplicationIcon(pkg)
-            bitmapToBase64(drawableToBitmap(drawable))
-        } catch (e: Exception) {
-            null
-        }
+        // Extract app icon as compact 96x96 PNG base64 (cached per package to eliminate GC & IPC overhead)
+        val iconBase64 = appIconCache.computeIfAbsent(pkg) {
+            try {
+                val drawable = pm.getApplicationIcon(pkg)
+                bitmapToBase64(drawableToBitmap(drawable))
+            } catch (e: Exception) {
+                ""
+            }
+        }.ifEmpty { null }
 
         // Extract action buttons and remote input replies
         val actionsList = mutableListOf<NotificationActionInfo>()

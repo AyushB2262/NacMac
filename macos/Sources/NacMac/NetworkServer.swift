@@ -279,12 +279,19 @@ public final class NetworkServer: @unchecked Sendable {
                 return
             }
             
-            self.readPayload(from: conn, length: Int(length))
+            self.readPayload(from: conn, targetLength: Int(length), accumulated: Data())
         }
     }
     
-    private func readPayload(from conn: NWConnection, length: Int) {
-        conn.receive(minimumIncompleteLength: length, maximumLength: length) { [weak self] data, _, isComplete, error in
+    private func readPayload(from conn: NWConnection, targetLength: Int, accumulated: Data) {
+        let remaining = targetLength - accumulated.count
+        guard remaining > 0 else {
+            processInboundData(accumulated, from: conn)
+            readNextMessage(from: conn)
+            return
+        }
+        
+        conn.receive(minimumIncompleteLength: 1, maximumLength: remaining) { [weak self] data, _, isComplete, error in
             guard let self = self else { return }
             
             if let error = error {
@@ -293,14 +300,24 @@ public final class NetworkServer: @unchecked Sendable {
                 return
             }
             
-            if let payloadData = data, payloadData.count == length {
-                self.processInboundData(payloadData, from: conn)
+            var currentData = accumulated
+            if let chunk = data, !chunk.isEmpty {
+                currentData.append(chunk)
             }
             
-            if !isComplete {
-                self.readNextMessage(from: conn)
-            } else {
+            if currentData.count == targetLength {
+                self.processInboundData(currentData, from: conn)
+                if !isComplete {
+                    self.readNextMessage(from: conn)
+                } else {
+                    self.handleDisconnection(for: conn)
+                }
+            } else if isComplete {
+                print("[NacMac-Network] Connection closed prematurely (received \(currentData.count) of \(targetLength) bytes)")
                 self.handleDisconnection(for: conn)
+            } else {
+                // Continue streaming remaining bytes for this frame
+                self.readPayload(from: conn, targetLength: targetLength, accumulated: currentData)
             }
         }
     }
@@ -494,18 +511,33 @@ public final class NetworkServer: @unchecked Sendable {
     
     // MARK: - Outbound Transmission
     
-    public func sendEnvelope(_ envelope: NacMacEnvelope, to deviceId: String? = nil) {
+    public func sendEnvelope(_ envelope: NacMacEnvelope, to deviceId: String? = nil, completion: (@Sendable () -> Void)? = nil) {
         queue.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else {
+                completion?()
+                return
+            }
             if let targetId = deviceId {
                 if let conn = self.activeConnections[targetId] {
-                    self.sendEnvelopeToConnection(envelope, conn: conn)
+                    self.sendEnvelopeToConnection(envelope, conn: conn, completion: completion)
                 } else {
                     print("[NacMac-Network] Target device not connected: \(targetId)")
+                    completion?()
                 }
             } else {
+                guard !self.activeConnections.isEmpty else {
+                    completion?()
+                    return
+                }
+                let group = DispatchGroup()
                 for conn in self.activeConnections.values {
-                    self.sendEnvelopeToConnection(envelope, conn: conn)
+                    group.enter()
+                    self.sendEnvelopeToConnection(envelope, conn: conn) {
+                        group.leave()
+                    }
+                }
+                if let comp = completion {
+                    group.notify(queue: self.queue, execute: comp)
                 }
             }
         }
@@ -523,8 +555,11 @@ public final class NetworkServer: @unchecked Sendable {
         }
     }
     
-    private func sendEnvelopeToConnection(_ envelope: NacMacEnvelope, conn: NWConnection) {
-        guard let payloadData = try? JSONEncoder().encode(envelope) else { return }
+    private func sendEnvelopeToConnection(_ envelope: NacMacEnvelope, conn: NWConnection, completion: (@Sendable () -> Void)? = nil) {
+        guard let payloadData = try? JSONEncoder().encode(envelope) else {
+            completion?()
+            return
+        }
         
         var length = UInt32(payloadData.count).bigEndian
         var packet = Data(bytes: &length, count: 4)
@@ -534,12 +569,13 @@ public final class NetworkServer: @unchecked Sendable {
             if let error = error {
                 print("[NacMac-Network] Send error: \(error)")
             }
+            completion?()
         })
     }
     
     public func sendFile(at url: URL, to deviceId: String? = nil) {
-        FileTransferManager.shared.sendFile(at: url) { [weak self] envelope in
-            self?.sendEnvelope(envelope, to: deviceId)
+        FileTransferManager.shared.sendFile(at: url) { [weak self] envelope, chunkCompleted in
+            self?.sendEnvelope(envelope, to: deviceId, completion: chunkCompleted)
         }
     }
     

@@ -15,6 +15,7 @@ final class DashboardState: ObservableObject {
     @Published var localIP: String = "127.0.0.1"
     @Published var port: Int = 52840
     @Published var qrCodeImage: NSImage? = nil
+    private var lastQRString: String = ""
     
     // Multi-Device Lists
     @Published var connectedDevices: [ConnectedDeviceInfo] = []
@@ -53,7 +54,10 @@ final class DashboardState: ObservableObject {
         self.port = Int(NetworkServer.shared.port.rawValue)
         
         let qrStr = PairingManager.shared.generateQRJSONString()
-        self.qrCodeImage = PairingManager.shared.generateQRImage(from: qrStr)
+        if qrStr != lastQRString {
+            lastQRString = qrStr
+            self.qrCodeImage = PairingManager.shared.generateQRImage(from: qrStr)
+        }
         
         self.pairedDevices = PairingManager.shared.getPairedDevices()
         self.connectedDevices = NetworkServer.shared.getConnectedDevices()
@@ -127,6 +131,9 @@ final class DashboardState: ObservableObject {
         )
         notifications.removeAll { $0.id == payload.id }
         notifications.insert(item, at: 0)
+        if notifications.count > 100 {
+            notifications.removeLast(notifications.count - 100)
+        }
         let originMsg = payload.deviceName != nil ? " (via \(payload.deviceName!))" : ""
         addLog("Received notification from \(payload.appName): \(payload.title)\(originMsg)", type: "success")
     }
@@ -136,6 +143,9 @@ final class DashboardState: ObservableObject {
         NetworkServer.shared.sendFile(at: url, to: target)
         let name = url.lastPathComponent
         completedTransfers.insert(CompletedTransfer(name: name, sizeString: "Ready", direction: "Sent", filePath: url.path), at: 0)
+        if completedTransfers.count > 100 {
+            completedTransfers.removeLast(completedTransfers.count - 100)
+        }
         let targetMsg = target != nil ? " to selected device" : " to all online phones"
         addLog("Initiated file transfer: \(name)\(targetMsg)", type: "info")
     }
@@ -224,6 +234,9 @@ final class DashboardState: ObservableObject {
     func addLog(_ message: String, type: String = "info") {
         let entry = ActivityLogEntry(message: message, type: type)
         activityLogs.insert(entry, at: 0)
+        if activityLogs.count > 200 {
+            activityLogs.removeLast(activityLogs.count - 200)
+        }
     }
 }
 

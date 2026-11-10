@@ -114,6 +114,8 @@ public final class PairingManager: @unchecked Sendable {
     }
     
     public func rotateActiveSecret() {
+        lock.lock()
+        defer { lock.unlock() }
         self.activeSecret = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         self.activeSecretCreatedAt = Date()
         saveActiveQRPayload()

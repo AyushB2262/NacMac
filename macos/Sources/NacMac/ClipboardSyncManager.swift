@@ -26,14 +26,9 @@ public final class ClipboardSyncManager: @unchecked Sendable {
     }
     
     public func stop() {
-        if Thread.isMainThread {
-            monitorTimer?.invalidate()
-            monitorTimer = nil
-        } else {
-            DispatchQueue.main.sync { [weak self] in
-                self?.monitorTimer?.invalidate()
-                self?.monitorTimer = nil
-            }
+        DispatchQueue.main.async { [weak self] in
+            self?.monitorTimer?.invalidate()
+            self?.monitorTimer = nil
         }
     }
     

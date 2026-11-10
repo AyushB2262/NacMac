@@ -154,10 +154,9 @@ public final class FileTransferManager: @unchecked Sendable {
             return false
         }
         
-        // 2. SHA-256 integrity verification
+        // 2. Streaming SHA-256 integrity verification (O(1) memory footprint)
         if let expectedSha = payload.sha256, !expectedSha.isEmpty {
-            if let fileData = try? Data(contentsOf: entry.partURL) {
-                let actualSha = SHA256.hash(data: fileData).map { String(format: "%02x", $0) }.joined()
+            if let actualSha = computeFileSHA256(at: entry.partURL) {
                 if actualSha.lowercased() != expectedSha.lowercased() {
                     print("[NacMac-File] SHA-256 mismatch! Expected \(expectedSha), got \(actualSha)")
                     try? FileManager.default.removeItem(at: entry.partURL)
@@ -165,6 +164,11 @@ public final class FileTransferManager: @unchecked Sendable {
                     return false
                 }
                 print("[NacMac-File] SHA-256 verified successfully: \(actualSha)")
+            } else {
+                print("[NacMac-File] Failed to compute SHA-256 for part file")
+                try? FileManager.default.removeItem(at: entry.partURL)
+                delegate?.transferDidFail(transferId: payload.transferId, error: "SHA-256 read error")
+                return false
             }
         }
         
@@ -215,9 +219,27 @@ public final class FileTransferManager: @unchecked Sendable {
         handleFileCancel(FileCancelPayload(transferId: transferId, reason: "Cancelled by Mac user"))
     }
     
+    private func computeFileSHA256(at fileURL: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+        defer { try? handle.close() }
+        
+        var hasher = SHA256()
+        let bufferSize = 1024 * 1024 // 1 MB streaming buffer
+        while true {
+            let data = handle.readData(ofLength: bufferSize)
+            if data.isEmpty { break }
+            hasher.update(data: data)
+        }
+        let digest = hasher.finalize()
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+    
     // MARK: - Sending Files to Android
     
-    public func sendFile(at fileURL: URL, sendChunkHandler: @escaping @Sendable (NacMacEnvelope) -> Void) {
+    public func sendFile(
+        at fileURL: URL,
+        sendChunkHandler: @escaping @Sendable (NacMacEnvelope, (@Sendable () -> Void)?) -> Void
+    ) {
         let transferId = UUID().uuidString
         let filename = fileURL.lastPathComponent
         
@@ -232,11 +254,12 @@ public final class FileTransferManager: @unchecked Sendable {
         // 1. Send FILE_START
         let startPayload = FileStartPayload(transferId: transferId, filename: filename, size: size)
         if let data = try? JSONEncoder().encode(startPayload), let json = String(data: data, encoding: .utf8) {
-            sendChunkHandler(NacMacEnvelope(type: .fileStart, payload: json))
+            sendChunkHandler(NacMacEnvelope(type: .fileStart, payload: json), nil)
         }
         
         let chunkSize = 256 * 1024 // High-throughput 256 KB chunks (optimized streaming)
         let startTime = Date()
+        let backpressureSemaphore = DispatchSemaphore(value: 3) // Max 3 in-flight chunks (768 KB)
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
@@ -251,7 +274,7 @@ public final class FileTransferManager: @unchecked Sendable {
                     try? handle.close()
                     let cancelPayload = FileCancelPayload(transferId: transferId, reason: "Cancelled by sender")
                     if let d = try? JSONEncoder().encode(cancelPayload), let j = String(data: d, encoding: .utf8) {
-                        sendChunkHandler(NacMacEnvelope(type: .fileCancel, payload: j))
+                        sendChunkHandler(NacMacEnvelope(type: .fileCancel, payload: j), nil)
                     }
                     return
                 }
@@ -270,7 +293,10 @@ public final class FileTransferManager: @unchecked Sendable {
                 )
                 
                 if let d = try? JSONEncoder().encode(chunkPayload), let j = String(data: d, encoding: .utf8) {
-                    sendChunkHandler(NacMacEnvelope(type: .fileChunk, payload: j))
+                    backpressureSemaphore.wait()
+                    sendChunkHandler(NacMacEnvelope(type: .fileChunk, payload: j)) {
+                        backpressureSemaphore.signal()
+                    }
                 }
                 
                 offset += Int64(chunkData.count)
@@ -295,7 +321,7 @@ public final class FileTransferManager: @unchecked Sendable {
             let sha256Hex = digest.map { String(format: "%02x", $0) }.joined()
             let endPayload = FileEndPayload(transferId: transferId, totalBytes: size, sha256: sha256Hex)
             if let d = try? JSONEncoder().encode(endPayload), let j = String(data: d, encoding: .utf8) {
-                sendChunkHandler(NacMacEnvelope(type: .fileEnd, payload: j))
+                sendChunkHandler(NacMacEnvelope(type: .fileEnd, payload: j), nil)
             }
             
             self.delegate?.transferDidComplete(transferId: transferId, filename: filename, isReceiving: false)

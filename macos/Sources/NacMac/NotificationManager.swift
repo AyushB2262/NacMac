@@ -217,6 +217,10 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
                 options: [.customDismissAction]
             )
             lock.lock()
+            // Bound registered categories to prevent IPC bloat to usernoted
+            if registeredCategories.count >= 32, let oldest = registeredCategories.first {
+                registeredCategories.remove(oldest)
+            }
             registeredCategories.insert(category)
             UNUserNotificationCenter.current().setNotificationCategories(registeredCategories)
             lock.unlock()
@@ -227,7 +231,10 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
            let iconData = Data(base64Encoded: iconBase64) {
             let iconURL = cacheDir.appendingPathComponent("\(payload.packageName).png")
             do {
-                try iconData.write(to: iconURL)
+                let existingSize = (try? FileManager.default.attributesOfItem(atPath: iconURL.path)[.size] as? Int) ?? -1
+                if existingSize != iconData.count {
+                    try iconData.write(to: iconURL)
+                }
                 let attachment = try UNNotificationAttachment(identifier: "icon-\(payload.id)", url: iconURL, options: nil)
                 content.attachments = [attachment]
             } catch {

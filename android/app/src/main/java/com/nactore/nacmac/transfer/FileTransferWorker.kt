@@ -22,6 +22,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 data class ActiveTransferState(
     val transferId: String,
@@ -40,10 +41,11 @@ class FileTransferWorker(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val deviceStore = DeviceStore(context)
 
-    private val activeTransfers = mutableMapOf<String, FileOutputStream>()
-    private val transferFiles = mutableMapOf<String, Pair<File, File>>() // transferId -> (partFile, finalFile)
-    private val incomingSizes = mutableMapOf<String, Long>()
-    private val incomingBytes = mutableMapOf<String, Long>()
+    private val activeTransfers = ConcurrentHashMap<String, FileOutputStream>()
+    private val transferFiles = ConcurrentHashMap<String, Pair<File, File>>() // transferId -> (partFile, finalFile)
+    private val incomingSizes = ConcurrentHashMap<String, Long>()
+    private val incomingBytes = ConcurrentHashMap<String, Long>()
+    private val activeDigests = ConcurrentHashMap<String, MessageDigest>()
 
     private val _activeTransfer = MutableStateFlow<ActiveTransferState?>(null)
     val activeTransfer: StateFlow<ActiveTransferState?> = _activeTransfer
@@ -129,6 +131,9 @@ class FileTransferWorker(
             transferFiles[start.transferId] = Pair(partFile, finalFile)
             incomingSizes[start.transferId] = start.size
             incomingBytes[start.transferId] = 0L
+            try {
+                activeDigests[start.transferId] = MessageDigest.getInstance("SHA-256")
+            } catch (_: Exception) {}
 
             _activeTransfer.value = ActiveTransferState(
                 transferId = start.transferId,
@@ -150,6 +155,7 @@ class FileTransferWorker(
         try {
             val data = Base64.decode(chunk.dataBase64, Base64.NO_WRAP)
             fos.write(data)
+            activeDigests[chunk.transferId]?.update(data)
 
             val current = (incomingBytes[chunk.transferId] ?: 0L) + data.size
             incomingBytes[chunk.transferId] = current
@@ -168,6 +174,7 @@ class FileTransferWorker(
     private fun finishReceiving(transferId: String, expectedTotal: Long = 0L, expectedSha256: String? = null) {
         val fos = activeTransfers.remove(transferId) ?: return
         val files = transferFiles.remove(transferId) ?: return
+        val runningDigest = activeDigests.remove(transferId)
         val totalSize = if (expectedTotal > 0L) expectedTotal else (incomingSizes.remove(transferId) ?: 0L)
         val received = incomingBytes.remove(transferId) ?: 0L
 
@@ -185,17 +192,21 @@ class FileTransferWorker(
                 return
             }
 
-            // 2. Verify SHA-256 integrity if provided
+            // 2. Verify SHA-256 integrity if provided (incremental digest first, disk fallback)
             if (!expectedSha256.isNullOrEmpty()) {
-                val md = MessageDigest.getInstance("SHA-256")
-                partFile.inputStream().use { input ->
-                    val buf = ByteArray(64 * 1024)
-                    var r: Int
-                    while (input.read(buf).also { r = it } != -1) {
-                        md.update(buf, 0, r)
+                val actualSha = runningDigest?.let { md ->
+                    md.digest().joinToString("") { "%02x".format(it) }
+                } ?: run {
+                    val md = MessageDigest.getInstance("SHA-256")
+                    partFile.inputStream().use { input ->
+                        val buf = ByteArray(64 * 1024)
+                        var r: Int
+                        while (input.read(buf).also { r = it } != -1) {
+                            md.update(buf, 0, r)
+                        }
                     }
+                    md.digest().joinToString("") { "%02x".format(it) }
                 }
-                val actualSha = md.digest().joinToString("") { "%02x".format(it) }
                 if (!actualSha.equals(expectedSha256, ignoreCase = true)) {
                     Log.e(TAG, "SHA-256 mismatch! Expected $expectedSha256, got $actualSha")
                     partFile.delete()
@@ -232,15 +243,15 @@ class FileTransferWorker(
             deviceStore.addRecentTransfer(record)
             _recentTransfers.value = deviceStore.getRecentTransfers()
 
-            Log.d(TAG, "File successfully received and recorded: ${finalFile.name}")
+            Log.d(TAG, "File successfully received and recorded: ${uniqueTarget.name}")
 
             // Show download notification with direct file opening and folder action
-            val openPendingIntent = FileUtils.createOpenFilePendingIntent(context, finalFile, transferId.hashCode())
+            val openPendingIntent = FileUtils.createOpenFilePendingIntent(context, uniqueTarget, transferId.hashCode())
             val folderPendingIntent = FileUtils.createOpenFolderPendingIntent(context, transferId.hashCode() + 1)
 
             val notif = NotificationCompat.Builder(context, "nacmac_transfers")
                 .setContentTitle("File Received from Mac")
-                .setContentText("${finalFile.name} • Tap to open")
+                .setContentText("${uniqueTarget.name} • Tap to open")
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 .setContentIntent(openPendingIntent)
                 .addAction(android.R.drawable.ic_menu_agenda, "Open Folder", folderPendingIntent)
@@ -258,6 +269,7 @@ class FileTransferWorker(
     private fun cancelReceiving(transferId: String) {
         val fos = activeTransfers.remove(transferId)
         val files = transferFiles.remove(transferId)
+        activeDigests.remove(transferId)
         incomingSizes.remove(transferId)
         incomingBytes.remove(transferId)
         _activeTransfer.value = null
