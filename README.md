@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6">
   <img src="https://img.shields.io/badge/Kotlin-1.9.24%20|%20Material%203-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin">
   <img src="https://img.shields.io/badge/Architecture-100%25%20Local%20P2P-orange?style=flat-square" alt="100% Local P2P">
-  <img src="https://img.shields.io/badge/Release-v1.0.0-059669?style=flat-square" alt="v1.0.0">
+  <img src="https://img.shields.io/badge/Release-v1.1.0-059669?style=flat-square" alt="v1.1.0">
 </p>
 
 <h2 align="center">
@@ -23,7 +23,7 @@
 
 <p align="center">
   <a href="https://ayushb2262.github.io/NacMac/"><b>Live Web Portal</b></a> ·
-  <a href="#download--quick-start"><b>Download v1.0.0</b></a> ·
+  <a href="#download--quick-start"><b>Download v1.1.0</b></a> ·
   <a href="#see-it-work"><b>See It Work</b></a> ·
   <a href="#features"><b>Features</b></a> ·
   <a href="#comparison-why-nacmac"><b>Why NacMac?</b></a> ·
@@ -38,7 +38,7 @@
 ## Download & Quick Start
 
 ### macOS Workstation (macOS 13.0+)
-1. Download **`NacMac-v1.0.0.dmg`** from the [Releases](https://github.com/AyushB2262/NacMac/releases) page.
+1. Download **`NacMac-v1.1.0.dmg`** from the [Releases](https://github.com/AyushB2262/NacMac/releases) page.
 2. Open the disk image and drag **NacMac.app** into `/Applications`.
 3. Launch NacMac. It will appear in your Menu Bar with an amber indicator dot.
 
@@ -51,7 +51,7 @@
 ---
 
 ### Android Companion (Android 8.0+)
-1. Download **`NacMac-v1.0.0.apk`** from the [Releases](https://github.com/AyushB2262/NacMac/releases) page.
+1. Download **`NacMac-v1.1.0.apk`** from the [Releases](https://github.com/AyushB2262/NacMac/releases) page.
 2. Install the APK on your phone (enable *"Install unknown apps"* if prompted).
 3. Open NacMac and grant the necessary permissions:
    - **Notification Access:** Allows NacMac to mirror alerts to your Mac.
