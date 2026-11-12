@@ -66,11 +66,21 @@ All communication travels over framed TCP packets consisting of a 4-byte big-end
 | Type | Description |
 | :--- | :--- |
 | `PAIR_REQUEST` | Android client auth handshake containing `androidId`, `deviceName`, and `authSecret`. |
-| `PAIR_RESPONSE` | macOS server authentication confirmation (`success: Bool`, `macName: String`). |
+| `PAIR_RESPONSE` | macOS server authentication confirmation (`success: Bool`, `macName: String`, `macId: String`). |
 | `HEARTBEAT_PING` / `_PONG` | Periodic 10-second keepalive signal maintaining active NAT/socket states. |
-| `NOTIFICATION` | Forwarded notification envelope containing title, body, app name, and icon. |
-| `NOTIFICATION_DISMISSED` | Notification dismissal sync payload. |
+| `NOTIFICATION` | Forwarded notification envelope containing title, body, app name, icon, actions, and reply capability. |
+| `NOTIFICATION_DISMISSED` | Notification dismissal sync payload (`id`, `deviceId`). |
+| `NOTIFICATION_ACTION` | Interactive action button triggers and in-line remote text replies (`notificationKey`, `actionIndex`, `replyText`). |
+| `CLIPBOARD_SYNC` | Universal clipboard synchronization across connected devices (`text`, `timestamp`, `sourceDeviceId`, `hash`). |
+| `SMS_CONVERSATIONS_REQUEST` | macOS request querying SMS thread list from Android companion (`limit`). |
+| `SMS_CONVERSATIONS_RESPONSE` | Android response returning thread list (`threads: [SMSThreadItem]`, `deviceId`). |
+| `SMS_MESSAGES_REQUEST` | macOS request for message history in a specific thread (`threadId`, `limit`). |
+| `SMS_MESSAGES_RESPONSE` | Android response returning historical messages (`threadId`, `messages`, `deviceId`). |
+| `SMS_SEND` | Outbound SMS dispatch command from macOS desktop (`recipient`, `message`, `threadId`). |
+| `SMS_SEND_STATUS` | Android dispatch result confirmation (`success: Bool`, `message: String`, `threadId`). |
 | `FILE_START` | File metadata initialization packet (`transferId`, `filename`, `size`, `sha256`). |
 | `FILE_CHUNK` | Binary chunk payload (`transferId`, `offset`, `length`, `dataBase64`). |
 | `FILE_END` | Transfer finalization marker triggering SHA-256 verification. |
 | `FILE_CANCEL` | Mid-stream cancellation trigger for immediate `.part` cleanup. |
+| `FILE_ACK` | Positive receipt confirmation for transfer coordination. |
+| `ERROR` | Diagnostic error and exception messaging. |

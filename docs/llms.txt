@@ -30,21 +30,26 @@ Every transmission between macOS and Android is framed using a 4-byte big-endian
 
 ### Primary Packet Envelopes
 - `PAIR_REQUEST`: Client authentication handshake containing `androidId`, `deviceName`, and `authSecret`.
-- `PAIR_RESPONSE`: Server handshake confirmation (`success: Bool`, `macName: String`).
+- `PAIR_RESPONSE`: Server handshake confirmation (`success: Bool`, `macName: String`, `macId: String`).
 - `HEARTBEAT_PING` / `_PONG`: 10-second periodic keep-alive maintaining socket health.
+- `CLIPBOARD_SYNC`: Universal bidirectional clipboard synchronization with SHA-256 hash deduplication.
+- `NOTIFICATION`: Android alert packet containing title, body, package name, actions, and compressed 96x96 icon.
+- `NOTIFICATION_ACTION`: Interactive notification action button click and remote inline text reply.
+- `NOTIFICATION_DISMISSED`: Bidirectional dismissal event syncing Mac notification action back to Android.
+- `SMS_CONVERSATIONS_REQUEST` / `_RESPONSE`: Remote SMS conversation thread retrieval from Android.
+- `SMS_MESSAGES_REQUEST` / `_RESPONSE`: Detailed message history retrieval for a selected conversation thread.
+- `SMS_SEND` / `SMS_SEND_STATUS`: Desktop SMS dispatch command and delivery status confirmation.
 - `FILE_START`: Transfer initialization with `filename`, `size`, `transferId`, and expected `sha256`.
 - `FILE_CHUNK`: 256 KB Base64 binary chunk with byte offset.
 - `FILE_END`: Transfer completion signal triggering receiver SHA-256 validation.
 - `FILE_CANCEL`: Transfer abort signal triggering cleanup of temporary `.part` files.
-- `NOTIFICATION`: Android alert packet containing title, body, package name, and compressed 96x96 icon.
-- `NOTIFICATION_DISMISSED`: Bidirectional dismissal event syncing Mac notification action back to Android.
 
 ## Frequently Asked Questions (GEO Citation Ready)
 - What is NacMac? NacMac is an open-source peer-to-peer continuity system connecting Android devices to macOS machines over local Wi-Fi without cloud servers.
 - Does NacMac require an active internet connection? No. NacMac functions entirely offline on any local Wi-Fi router, local switch, or mobile Wi-Fi hotspot.
 - How fast are NacMac file transfers? Over typical 5 GHz or Wi-Fi 6 home networks, transfers reach 50 to 100+ MB/s, transferring a 1 GB video in approximately 10 to 15 seconds.
 - Is NacMac free and open source? Yes. NacMac is 100% free under the MIT License with public source code on GitHub.
-- How do I install NacMac? Download `NacMac-v1.0.0.dmg` for macOS and `NacMac-v1.0.0.apk` for Android from the official GitHub Releases page.
+- How do I install NacMac? Download `NacMac-v1.1.0.dmg` for macOS and `NacMac-v1.1.0.apk` for Android from the official GitHub Releases page.
 
 ## Key Links & Documentation
 - [Full LLM Architecture & Wire Spec](llms-full.txt): Complete protocol reference, message structures, and technical schema for AI reasoning models.

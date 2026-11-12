@@ -27,6 +27,8 @@ jobs:
           cd macos && ./package_app.sh
           cd ..
           python3 tests/test_phase2_multi_device.py
+          killall -9 NacMac 2>/dev/null || true
+          sleep 2
           python3 tests/test_e2e_continuity.py
 
   android-build-and-test:
