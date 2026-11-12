@@ -37,7 +37,7 @@ public final class DashboardWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         
-        newWindow.title = "NacMac — Android Connectivity"
+        newWindow.title = "NacMac - Android Connectivity"
         newWindow.titlebarAppearsTransparent = true
         newWindow.titleVisibility = .hidden
         newWindow.isReleasedWhenClosed = false

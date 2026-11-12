@@ -561,8 +561,9 @@ public final class NetworkServer: @unchecked Sendable {
             return
         }
         
+        var packet = Data(capacity: 4 + payloadData.count)
         var length = UInt32(payloadData.count).bigEndian
-        var packet = Data(bytes: &length, count: 4)
+        withUnsafeBytes(of: &length) { packet.append(contentsOf: $0) }
         packet.append(payloadData)
         
         conn.send(content: packet, completion: .contentProcessed { error in

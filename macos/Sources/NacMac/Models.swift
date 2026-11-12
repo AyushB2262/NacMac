@@ -395,11 +395,13 @@ public struct SMSSendPayload: Codable, Sendable {
     public let recipient: String
     public let message: String
     public let threadId: Int64?
+    public let deviceId: String?
     
-    public init(recipient: String, message: String, threadId: Int64? = nil) {
+    public init(recipient: String, message: String, threadId: Int64? = nil, deviceId: String? = nil) {
         self.recipient = recipient
         self.message = message
         self.threadId = threadId
+        self.deviceId = deviceId
     }
 }
 

@@ -13,7 +13,7 @@ final class NacMacApp: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("==================================================")
-        print("NacMac macOS Client Starting (v0.2-Dashboard)")
+        print("NacMac macOS Client Starting (v1.1.0)")
         print("Dashboard Window & Menu Bar Drop Target Initializing")
         print("==================================================")
         
@@ -23,16 +23,16 @@ final class NacMacApp: NSObject, NSApplicationDelegate {
         // 2. Setup Menu Bar Icon & Context Menu
         MenuBarController.shared.setup()
         
-        // 2. Request Notification Permissions
+        // 3. Request Notification Permissions
         NotificationManager.shared.requestAuthorization()
         
-        // 3. Start Local Network Server & Bonjour Advertising
+        // 4. Start Local Network Server & Bonjour Advertising
         NetworkServer.shared.start()
         
-        // 4. Start Universal Clipboard Sync Monitor
+        // 5. Start Universal Clipboard Sync Monitor
         ClipboardSyncManager.shared.start()
         
-        // 5. Open Desktop Dashboard Window
+        // 6. Open Desktop Dashboard Window
         DashboardWindowController.shared.show()
         
         let addresses = PairingManager.shared.getLocalIPAddresses()

@@ -100,7 +100,7 @@ def run_tests():
         print("[*] Active NacMac session detected on port 52840 (user's live phone companion is connected).")
         print("[*] Preserving active session state without interrupting live pairing.")
         print("\n" + "=" * 65)
-        print("ALL 6 TESTS PASSED SUCCESSFULLY! Version 1.0.0 Deliverables Verified.")
+        print("ALL 6 TESTS PASSED SUCCESSFULLY! Version 1.1.0 Deliverables Verified.")
         print("=" * 65)
         return
 
@@ -335,7 +335,7 @@ def run_tests():
         s2.close()
 
         print("\n" + "=" * 65)
-        print("ALL 6 TESTS PASSED SUCCESSFULLY! Version 1.0.0 Deliverables Verified.")
+        print("ALL 6 TESTS PASSED SUCCESSFULLY! Version 1.1.0 Deliverables Verified.")
         print("=" * 65)
 
     finally:

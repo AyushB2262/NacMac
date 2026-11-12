@@ -200,7 +200,7 @@ Syncs notification dismissal from macOS back to Android.
 ## 6. Installation & Quick Start
 
 ### macOS
-1. Download `NacMac-v1.0.0.dmg` from the GitHub Releases page.
+1. Download `NacMac-v1.1.0.dmg` from the GitHub Releases page.
 2. Drag `NacMac.app` to `/Applications`.
 3. If macOS Gatekeeper prompts an unidentified developer warning, run:
    ```bash
@@ -209,7 +209,7 @@ Syncs notification dismissal from macOS back to Android.
 4. Launch NacMac from Spotlight or Applications.
 
 ### Android
-1. Download `NacMac-v1.0.0.apk` from GitHub Releases.
+1. Download `NacMac-v1.1.0.apk` from GitHub Releases.
 2. Install the APK and grant Notification Access and Camera permissions.
 3. Tap "Scan QR Code" and point the camera at the macOS dashboard QR code to establish paired continuity.
 

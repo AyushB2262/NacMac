@@ -190,7 +190,7 @@ final class DashboardState: ObservableObject {
             addLog("No connected phone to send SMS", type: "warning")
             return
         }
-        let req = SMSSendPayload(recipient: recipient, message: message, threadId: threadId)
+        let req = SMSSendPayload(recipient: recipient, message: message, threadId: threadId, deviceId: resolvedTarget)
         if let data = try? JSONEncoder().encode(req),
            let str = String(data: data, encoding: .utf8) {
             NetworkServer.shared.sendEnvelope(NacMacEnvelope(type: .smsSend, payload: str), to: resolvedTarget)
@@ -1262,7 +1262,7 @@ public struct DashboardView: View {
                     HStack {
                         Text("Paired Keys Storage:")
                         Spacer()
-                        Text("~/.nacmac/paired_device.json")
+                        Text("~/.nacmac/paired_devices.json")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(.secondary)
                     }

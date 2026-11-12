@@ -688,7 +688,7 @@ class MainActivity : AppCompatActivity() {
             typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
         val txtSubtitle = TextView(this).apply {
-            text = "Android Companion v1.0.0"
+            text = "Android Companion v1.1.0"
             textSize = 12f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
         }
@@ -738,7 +738,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val txtInfo = TextView(this).apply {
-            text = "Bonjour: _nacmac._tcp. • Port: 52840\nVersion: 1.0.0 • Nactore (nactore.com)"
+            text = "Bonjour: _nacmac._tcp. • Port: 52840\nVersion: 1.1.0 • Nactore (nactore.com)"
             textSize = 12f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
             val topPad = (14 * resources.displayMetrics.density).toInt()

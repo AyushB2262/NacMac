@@ -11,8 +11,8 @@ android {
         applicationId = "com.nactore.nacmac"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.0.0"
+        versionCode = 4
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -59,7 +59,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     // CameraX core & lifecycle

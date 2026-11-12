@@ -116,8 +116,8 @@ public final class ClipboardSyncManager: @unchecked Sendable {
             self.lastChangeCount = NSPasteboard.general.changeCount
             print("[NacMac-Clipboard] Wrote remote clipboard from \(payload.sourceDeviceId) to Mac pasteboard (\(payload.text.count) chars)")
             
-            Task { @MainActor in
-                let snippet = payload.text.count > 30 ? "\(payload.text.prefix(30))..." : payload.text
+            let snippet = payload.text.count > 30 ? "\(payload.text.prefix(30))..." : payload.text
+            MainActor.assumeIsolated {
                 DashboardState.shared.addLog("Universal Clipboard: copied \"\(snippet)\" from device", type: "success")
             }
         }
