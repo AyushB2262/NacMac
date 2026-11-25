@@ -218,7 +218,7 @@ Confirms byte-size and SHA-256 verification status after `FILE_END`.
 ## 6. Installation & Quick Start
 
 ### macOS
-1. Download `NacMac-v1.1.0.dmg` from the GitHub Releases page.
+1. Download `NacMac-v1.2.0.dmg` from the GitHub Releases page.
 2. Drag `NacMac.app` to `/Applications`.
 3. If macOS Gatekeeper prompts an unidentified developer warning, run:
    ```bash
@@ -227,7 +227,7 @@ Confirms byte-size and SHA-256 verification status after `FILE_END`.
 4. Launch NacMac from Spotlight or Applications.
 
 ### Android
-1. Download `NacMac-v1.1.0.apk` from GitHub Releases.
+1. Download `NacMac-v1.2.0.apk` from GitHub Releases.
 2. Install the APK and grant Notification Access and Camera permissions.
 3. Tap "Scan QR Code" and point the camera at the macOS dashboard QR code to establish paired continuity.
 

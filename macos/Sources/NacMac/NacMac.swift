@@ -23,7 +23,7 @@ final class NacMacApp: NSObject, NSApplicationDelegate {
         withExtendedLifetime(signalSources) {
             if isHeadless {
                 print("==================================================")
-                print("NacMac macOS Daemon Starting (v1.1.0, Headless)")
+                print("NacMac macOS Daemon Starting (v1.2.0, Headless)")
                 print("==================================================")
                 _ = PairingManager.shared
                 NetworkServer.shared.start()
@@ -64,7 +64,7 @@ final class NacMacApp: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("==================================================")
-        print("NacMac macOS Client Starting (v1.1.0)")
+        print("NacMac macOS Client Starting (v1.2.0)")
         print("Dashboard Window & Menu Bar Drop Target Initializing")
         print("==================================================")
 

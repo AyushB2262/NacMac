@@ -51,7 +51,7 @@ Every transmission between macOS and Android is framed using a 4-byte big-endian
 - Does NacMac require an active internet connection? No. NacMac functions entirely offline on any local Wi-Fi router, local switch, or mobile Wi-Fi hotspot.
 - How fast are NacMac file transfers? Over typical 5 GHz or Wi-Fi 6 home networks, transfers reach 50 to 100+ MB/s, transferring a 1 GB video in approximately 10 to 15 seconds.
 - Is NacMac free and open source? Yes. NacMac is 100% free under the MIT License with public source code on GitHub.
-- How do I install NacMac? Download `NacMac-v1.1.0.dmg` for macOS and `NacMac-v1.1.0.apk` for Android from the official GitHub Releases page.
+- How do I install NacMac? Download `NacMac-v1.2.0.dmg` for macOS and `NacMac-v1.2.0.apk` for Android from the official GitHub Releases page.
 
 ## Key Links & Documentation
 - [Full LLM Architecture & Wire Spec](llms-full.txt): Complete protocol reference, message structures, and technical schema for AI reasoning models.
