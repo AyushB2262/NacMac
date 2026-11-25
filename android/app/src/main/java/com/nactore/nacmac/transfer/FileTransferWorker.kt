@@ -6,9 +6,12 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.OpenableColumns
 import android.util.Base64
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.nactore.nacmac.data.DeviceStore
 import com.nactore.nacmac.model.*
@@ -19,7 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -41,10 +44,11 @@ class FileTransferWorker(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val deviceStore = DeviceStore(context)
 
-    private val activeTransfers = ConcurrentHashMap<String, FileOutputStream>()
+    private val activeTransfers = ConcurrentHashMap<String, RandomAccessFile>()
     private val transferFiles = ConcurrentHashMap<String, Pair<File, File>>() // transferId -> (partFile, finalFile)
     private val incomingSizes = ConcurrentHashMap<String, Long>()
     private val incomingBytes = ConcurrentHashMap<String, Long>()
+    private val expectedHashes = ConcurrentHashMap<String, String>()
     private val activeDigests = ConcurrentHashMap<String, MessageDigest>()
 
     private val _activeTransfer = MutableStateFlow<ActiveTransferState?>(null)
@@ -126,11 +130,14 @@ class FileTransferWorker(
         if (partFile.exists()) partFile.delete()
 
         try {
-            val fos = FileOutputStream(partFile)
-            activeTransfers[start.transferId] = fos
+            val raf = RandomAccessFile(partFile, "rw")
+            activeTransfers[start.transferId] = raf
             transferFiles[start.transferId] = Pair(partFile, finalFile)
             incomingSizes[start.transferId] = start.size
             incomingBytes[start.transferId] = 0L
+            if (!start.sha256.isNullOrEmpty()) {
+                expectedHashes[start.transferId] = start.sha256
+            }
             try {
                 activeDigests[start.transferId] = MessageDigest.getInstance("SHA-256")
             } catch (_: Exception) {}
@@ -151,15 +158,29 @@ class FileTransferWorker(
     }
 
     private fun writeChunk(chunk: FileChunkPayload) {
-        val fos = activeTransfers[chunk.transferId] ?: return
+        val raf = activeTransfers[chunk.transferId] ?: return
         try {
             val data = Base64.decode(chunk.dataBase64, Base64.NO_WRAP)
-            fos.write(data)
-            activeDigests[chunk.transferId]?.update(data)
-
-            val current = (incomingBytes[chunk.transferId] ?: 0L) + data.size
-            incomingBytes[chunk.transferId] = current
             val total = incomingSizes[chunk.transferId] ?: 0L
+            if (chunk.offset < 0 || (total > 0L && chunk.offset + data.size > total)) {
+                Log.e(TAG, "Rejected out-of-bounds chunk offset ${chunk.offset}")
+                return
+            }
+
+            val prevBytes = incomingBytes[chunk.transferId] ?: 0L
+            raf.seek(chunk.offset)
+            raf.write(data)
+            if (chunk.offset == prevBytes) {
+                activeDigests[chunk.transferId]?.update(data)
+                incomingBytes[chunk.transferId] = prevBytes + data.size
+            } else {
+                // Out-of-order or retried chunk: fall back to full file SHA-256 check on completion
+                activeDigests.remove(chunk.transferId)
+                val maxEnd = maxOf(prevBytes, chunk.offset + data.size)
+                incomingBytes[chunk.transferId] = maxEnd
+            }
+
+            val current = incomingBytes[chunk.transferId] ?: 0L
             val percent = if (total > 0) ((current.toDouble() / total) * 100).toInt().coerceIn(0, 100) else 0
 
             _activeTransfer.value = _activeTransfer.value?.copy(
@@ -172,15 +193,17 @@ class FileTransferWorker(
     }
 
     private fun finishReceiving(transferId: String, expectedTotal: Long = 0L, expectedSha256: String? = null) {
-        val fos = activeTransfers.remove(transferId) ?: return
+        val raf = activeTransfers.remove(transferId) ?: return
         val files = transferFiles.remove(transferId) ?: return
         val runningDigest = activeDigests.remove(transferId)
         val totalSize = if (expectedTotal > 0L) expectedTotal else (incomingSizes.remove(transferId) ?: 0L)
-        val received = incomingBytes.remove(transferId) ?: 0L
+        incomingSizes.remove(transferId)
+        incomingBytes.remove(transferId)
+        val effectiveExpectedSha = expectedSha256?.takeIf { it.isNotEmpty() } ?: expectedHashes.remove(transferId)
+        expectedHashes.remove(transferId)
 
         try {
-            fos.flush()
-            fos.close()
+            raf.close()
 
             val (partFile, finalFile) = files
 
@@ -193,7 +216,7 @@ class FileTransferWorker(
             }
 
             // 2. Verify SHA-256 integrity if provided (incremental digest first, disk fallback)
-            if (!expectedSha256.isNullOrEmpty()) {
+            if (!effectiveExpectedSha.isNullOrEmpty()) {
                 val actualSha = runningDigest?.let { md ->
                     md.digest().joinToString("") { "%02x".format(it) }
                 } ?: run {
@@ -207,8 +230,8 @@ class FileTransferWorker(
                     }
                     md.digest().joinToString("") { "%02x".format(it) }
                 }
-                if (!actualSha.equals(expectedSha256, ignoreCase = true)) {
-                    Log.e(TAG, "SHA-256 mismatch! Expected $expectedSha256, got $actualSha")
+                if (!actualSha.equals(effectiveExpectedSha, ignoreCase = true)) {
+                    Log.e(TAG, "SHA-256 mismatch! Expected $effectiveExpectedSha, got $actualSha")
                     partFile.delete()
                     _activeTransfer.value = null
                     return
@@ -267,14 +290,15 @@ class FileTransferWorker(
     }
 
     private fun cancelReceiving(transferId: String) {
-        val fos = activeTransfers.remove(transferId)
+        val raf = activeTransfers.remove(transferId)
         val files = transferFiles.remove(transferId)
         activeDigests.remove(transferId)
+        expectedHashes.remove(transferId)
         incomingSizes.remove(transferId)
         incomingBytes.remove(transferId)
         _activeTransfer.value = null
         try {
-            fos?.close()
+            raf?.close()
             files?.first?.delete()
             Log.d(TAG, "Transfer $transferId cancelled")
         } catch (_: Exception) {}
@@ -284,6 +308,13 @@ class FileTransferWorker(
 
     fun sendFileToMac(uri: Uri, onProgress: (percent: Int) -> Unit = {}) {
         scope.launch(Dispatchers.IO) {
+            if (!connectionManager.hasActiveConnections()) {
+                Log.w(TAG, "Skipped sending file: no connected Mac workstation")
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Connect to Mac first to send files", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
             val transferId = UUID.randomUUID().toString()
             val resolver = context.contentResolver
 

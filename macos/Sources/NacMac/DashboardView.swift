@@ -142,12 +142,22 @@ final class DashboardState: ObservableObject {
         let target = (targetSendDevice == "ALL" ? nil : targetSendDevice)
         NetworkServer.shared.sendFile(at: url, to: target)
         let name = url.lastPathComponent
-        completedTransfers.insert(CompletedTransfer(name: name, sizeString: "Ready", direction: "Sent", filePath: url.path), at: 0)
-        if completedTransfers.count > 100 {
-            completedTransfers.removeLast(completedTransfers.count - 100)
-        }
         let targetMsg = target != nil ? " to selected device" : " to all online phones"
         addLog("Initiated file transfer: \(name)\(targetMsg)", type: "info")
+    }
+    
+    func refreshQRCode() {
+        PairingManager.shared.rotateActiveSecret()
+        refreshState()
+        addLog("Rotated ephemeral QR pairing secret", type: "info")
+    }
+    
+    func handleDeviceStatus(_ status: DeviceStatusPayload) {
+        self.connectedDevices = NetworkServer.shared.getConnectedDevices()
+        if status.batteryLevel >= 0 && status.batteryLevel <= 15 && !status.isCharging {
+            let name = status.deviceName ?? "Android Device"
+            addLog("Low battery on \(name): \(status.batteryLevel)%", type: "warning")
+        }
     }
     
     // MARK: - SMS Messaging Actions
@@ -282,15 +292,19 @@ struct MirroredNotifItem: Identifiable {
 }
 
 struct ActivityLogEntry: Identifiable {
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
     let id = UUID()
     let timestamp = Date()
     let message: String
     let type: String
     
     var timeString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: timestamp)
+        return Self.timeFormatter.string(from: timestamp)
     }
 }
 
@@ -561,6 +575,10 @@ public struct DashboardView: View {
                                     Circle()
                                         .fill(Color.green)
                                         .frame(width: 7, height: 7)
+                                    
+                                    if let level = dev.batteryLevel, level >= 0 {
+                                        batteryBadge(level: level, isCharging: dev.isCharging == true)
+                                    }
                                 }
                                 Text("\(dev.ip) • ID: \(dev.deviceId)")
                                     .font(.system(size: 10, design: .monospaced))
@@ -632,9 +650,25 @@ public struct DashboardView: View {
     // MARK: - Pair New Device Card
     private var pairNewDeviceCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Pair New Device")
-                .font(.system(size: 14, weight: .semibold))
-                .tracking(-0.2)
+            HStack {
+                Text("Pair New Device")
+                    .font(.system(size: 14, weight: .semibold))
+                    .tracking(-0.2)
+                Spacer()
+                Button(action: {
+                    state.refreshQRCode()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10, weight: .medium))
+                        Text("Refresh QR")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Rotate ephemeral pairing secret and regenerate QR code")
+            }
             
             HStack(spacing: 14) {
                 if let qr = state.qrCodeImage {
@@ -1021,10 +1055,10 @@ public struct DashboardView: View {
             Spacer()
             
             HStack(spacing: 6) {
-                Image(systemName: "lock.shield.fill")
+                Image(systemName: "checkmark.shield.fill")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
-                Text("Local Peer-to-Peer Encryption with SHA-256")
+                Text("100% Local Wi-Fi • Integrity Verified with SHA-256")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
@@ -1530,15 +1564,55 @@ public struct DashboardView: View {
         }
     }
     
+    private static let smsTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private static let smsDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    @ViewBuilder
+    private func batteryBadge(level: Int, isCharging: Bool) -> some View {
+        let symbol: String = {
+            if isCharging { return "battery.100.bolt" }
+            switch level {
+            case 76...100: return "battery.100"
+            case 51...75: return "battery.75"
+            case 26...50: return "battery.50"
+            case 11...25: return "battery.25"
+            default: return "battery.0"
+            }
+        }()
+        let badgeColor: Color = {
+            if isCharging { return .green }
+            if level <= 15 { return .red }
+            if level <= 35 { return .orange }
+            return .green
+        }()
+
+        HStack(spacing: 3) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .semibold))
+            Text("\(level)%")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(badgeColor.opacity(0.14))
+        .foregroundColor(badgeColor)
+        .cornerRadius(6)
+        .accessibilityLabel(isCharging ? "Battery \(level) percent, charging" : "Battery \(level) percent")
+    }
+
     private func formatSMSTime(_ ts: Int64) -> String {
         guard ts > 0 else { return "" }
         let date = Date(timeIntervalSince1970: TimeInterval(ts > 1_000_000_000_000 ? ts / 1000 : ts))
-        let formatter = DateFormatter()
-        if Calendar.current.isDateInToday(date) {
-            formatter.dateFormat = "HH:mm"
-        } else {
-            formatter.dateFormat = "MMM d"
-        }
+        let formatter = Calendar.current.isDateInToday(date) ? Self.smsTimeFormatter : Self.smsDateFormatter
         return formatter.string(from: date)
     }
     

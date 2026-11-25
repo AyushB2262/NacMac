@@ -22,6 +22,7 @@ enum class NacMacMessageType(val rawValue: String) {
     FILE_END("FILE_END"),
     FILE_CANCEL("FILE_CANCEL"),
     FILE_ACK("FILE_ACK"),
+    DEVICE_STATUS("DEVICE_STATUS"),
     ERROR("ERROR");
 
     companion object {
@@ -768,6 +769,45 @@ data class SMSSendStatusPayload(
                     success = obj.getBoolean("success"),
                     message = obj.optString("message", ""),
                     threadId = if (obj.has("threadId") && !obj.isNull("threadId")) obj.getLong("threadId") else null
+                )
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+}
+
+// MARK: - Device Telemetry / Battery Status Payload
+data class DeviceStatusPayload(
+    val deviceId: String? = null,
+    val deviceName: String? = null,
+    val batteryLevel: Int,
+    val isCharging: Boolean,
+    val chargingSource: String? = null,
+    val timestamp: Long = System.currentTimeMillis() / 1000
+) {
+    fun toJSON(): JSONObject {
+        val obj = JSONObject()
+        if (deviceId != null) obj.put("deviceId", deviceId)
+        if (deviceName != null) obj.put("deviceName", deviceName)
+        obj.put("batteryLevel", batteryLevel.coerceIn(-1, 100))
+        obj.put("isCharging", isCharging)
+        if (chargingSource != null) obj.put("chargingSource", chargingSource)
+        obj.put("timestamp", timestamp)
+        return obj
+    }
+
+    companion object {
+        fun fromJSON(jsonString: String): DeviceStatusPayload? {
+            return try {
+                val obj = JSONObject(jsonString)
+                DeviceStatusPayload(
+                    deviceId = if (obj.has("deviceId") && !obj.isNull("deviceId")) obj.getString("deviceId") else null,
+                    deviceName = if (obj.has("deviceName") && !obj.isNull("deviceName")) obj.getString("deviceName") else null,
+                    batteryLevel = obj.getInt("batteryLevel").coerceIn(-1, 100),
+                    isCharging = obj.optBoolean("isCharging", false),
+                    chargingSource = if (obj.has("chargingSource") && !obj.isNull("chargingSource")) obj.getString("chargingSource") else null,
+                    timestamp = obj.optLong("timestamp", System.currentTimeMillis() / 1000)
                 )
             } catch (e: Exception) {
                 null

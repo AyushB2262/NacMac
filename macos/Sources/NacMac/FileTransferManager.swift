@@ -29,8 +29,8 @@ public final class FileTransferManager: @unchecked Sendable {
     public let downloadDirectory: URL
     public weak var delegate: FileTransferDelegate?
     
-    // In-flight incoming transfers: transferId -> (fileHandle, meta, bytesReceived, startTime)
-    private var incomingTransfers = [String: (handle: FileHandle, targetURL: URL, partURL: URL, totalBytes: Int64, receivedBytes: Int64, startTime: Date)]()
+    // In-flight incoming transfers: transferId -> transfer state
+    private var incomingTransfers = [String: (handle: FileHandle, targetURL: URL, partURL: URL, totalBytes: Int64, receivedBytes: Int64, receivedIntervals: [(Int64, Int64)], expectedSha256: String?, startTime: Date)]()
     
     // Outgoing transfer cancel flags: transferId -> isCancelled
     private var cancelledOutgoing = Set<String>()
@@ -95,24 +95,52 @@ public final class FileTransferManager: @unchecked Sendable {
             partURL: partURL,
             totalBytes: payload.size,
             receivedBytes: 0,
+            receivedIntervals: [],
+            expectedSha256: payload.sha256,
             startTime: Date()
         )
         print("[NacMac-File] Started receiving file: \(cleanFilename) (\(payload.size) bytes)")
         return true
     }
     
+    private func recordByteRange(_ start: Int64, _ end: Int64, into intervals: inout [(Int64, Int64)]) -> Int64 {
+        guard end > start else {
+            return intervals.reduce(0) { $0 + ($1.1 - $1.0) }
+        }
+        intervals.append((start, end))
+        intervals.sort { $0.0 < $1.0 }
+        var merged: [(Int64, Int64)] = []
+        for interval in intervals {
+            if let last = merged.last, interval.0 <= last.1 {
+                merged[merged.count - 1] = (last.0, max(last.1, interval.1))
+            } else {
+                merged.append(interval)
+            }
+        }
+        intervals = merged
+        return merged.reduce(0) { $0 + ($1.1 - $1.0) }
+    }
+    
     public func handleFileChunk(_ payload: FileChunkPayload) -> Bool {
         lock.lock()
         guard var entry = incomingTransfers[payload.transferId],
+              payload.offset >= 0,
               let chunkData = Data(base64Encoded: payload.dataBase64) else {
             lock.unlock()
+            return false
+        }
+        
+        let endOffset = payload.offset + Int64(chunkData.count)
+        if entry.totalBytes > 0 && endOffset > entry.totalBytes {
+            lock.unlock()
+            print("[NacMac-File] Rejected chunk exceeding declared file size (\(endOffset) > \(entry.totalBytes))")
             return false
         }
         
         do {
             try entry.handle.seek(toOffset: UInt64(payload.offset))
             try entry.handle.write(contentsOf: chunkData)
-            entry.receivedBytes += Int64(chunkData.count)
+            entry.receivedBytes = recordByteRange(payload.offset, endOffset, into: &entry.receivedIntervals)
             incomingTransfers[payload.transferId] = entry
             lock.unlock()
             
@@ -147,7 +175,8 @@ public final class FileTransferManager: @unchecked Sendable {
         try? entry.handle.close()
         
         // 1. Size verification
-        guard entry.receivedBytes == entry.totalBytes else {
+        guard entry.receivedBytes == entry.totalBytes,
+              (payload.totalBytes <= 0 || payload.totalBytes == entry.totalBytes) else {
             print("[NacMac-File] Size mismatch: expected \(entry.totalBytes), received \(entry.receivedBytes)")
             try? FileManager.default.removeItem(at: entry.partURL)
             delegate?.transferDidFail(transferId: payload.transferId, error: "File size mismatch")
@@ -155,7 +184,8 @@ public final class FileTransferManager: @unchecked Sendable {
         }
         
         // 2. Streaming SHA-256 integrity verification (O(1) memory footprint)
-        if let expectedSha = payload.sha256, !expectedSha.isEmpty {
+        let effectiveExpectedSha = (payload.sha256?.isEmpty == false) ? payload.sha256 : entry.expectedSha256
+        if let expectedSha = effectiveExpectedSha, !expectedSha.isEmpty {
             if let actualSha = computeFileSHA256(at: entry.partURL) {
                 if actualSha.lowercased() != expectedSha.lowercased() {
                     print("[NacMac-File] SHA-256 mismatch! Expected \(expectedSha), got \(actualSha)")

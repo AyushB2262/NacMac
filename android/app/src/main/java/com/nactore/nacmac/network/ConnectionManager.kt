@@ -1,6 +1,9 @@
 package com.nactore.nacmac.network
 
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import android.util.Log
 import com.nactore.nacmac.data.DeviceStore
 import com.nactore.nacmac.data.PairedMac
@@ -48,6 +51,10 @@ class ConnectionManager private constructor(private val context: Context) {
 
     val activeConnections = ConcurrentHashMap<String, MacConnection>()
     private val connectingMacIds = ConcurrentHashMap.newKeySet<String>()
+    @Volatile
+    private var lastSentBatteryLevel: Int = -1
+    @Volatile
+    private var lastSentCharging: Boolean? = null
 
     private val _status = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Disconnected)
     val status: StateFlow<ConnectionStatus> = _status
@@ -200,6 +207,7 @@ class ConnectionManager private constructor(private val context: Context) {
                     startReading(conn)
                     startHeartbeat(conn)
                     updateStatus()
+                    sendDeviceStatus(force = true, targetMacId = paired.macId)
                     Log.i(TAG, "Successfully connected to Mac: ${paired.macName} (${paired.lastKnownIp}:${paired.port})")
                     return@withContext true
                 }
@@ -250,6 +258,12 @@ class ConnectionManager private constructor(private val context: Context) {
             NacMacMessageType.FILE_END,
             NacMacMessageType.FILE_CANCEL -> {
                 fileTransferWorker?.handleIncomingFileEnvelope(envelope)
+            }
+            NacMacMessageType.FILE_ACK -> {
+                val ack = FileAckPayload.fromJSON(envelope.payload)
+                if (ack != null) {
+                    Log.i(TAG, "Received FILE_ACK for ${ack.transferId}: success=${ack.success} (${ack.message})")
+                }
             }
             NacMacMessageType.CLIPBOARD_SYNC -> {
                 NacMacAccessibilityService.handleIncomingClipboard(context, envelope.payload)
@@ -365,6 +379,49 @@ class ConnectionManager private constructor(private val context: Context) {
                 }
             }
         }
+    }
+
+    fun hasActiveConnections(): Boolean = activeConnections.isNotEmpty()
+
+    fun buildCurrentDeviceStatus(): DeviceStatusPayload? {
+        return try {
+            val batteryStatus = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+            val pct = if (level >= 0 && scale > 0) ((level * 100f) / scale).toInt().coerceIn(0, 100) else -1
+            val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+            val plugged = batteryStatus?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+            val source = when (plugged) {
+                BatteryManager.BATTERY_PLUGGED_AC -> "AC"
+                BatteryManager.BATTERY_PLUGGED_USB -> "USB"
+                BatteryManager.BATTERY_PLUGGED_WIRELESS -> "Wireless"
+                else -> "Battery"
+            }
+            DeviceStatusPayload(
+                deviceId = deviceStore.androidId,
+                deviceName = deviceStore.deviceName,
+                batteryLevel = pct,
+                isCharging = isCharging,
+                chargingSource = source
+            )
+        } catch (e: Exception) {
+            Log.d(TAG, "Unable to query battery status: ${e.message}")
+            null
+        }
+    }
+
+    fun sendDeviceStatus(force: Boolean = false, targetMacId: String? = null) {
+        if (!hasActiveConnections()) return
+        val status = buildCurrentDeviceStatus() ?: return
+        if (!force && status.batteryLevel == lastSentBatteryLevel && status.isCharging == lastSentCharging) {
+            return
+        }
+        lastSentBatteryLevel = status.batteryLevel
+        lastSentCharging = status.isCharging
+        val envelope = NacMacEnvelope(NacMacMessageType.DEVICE_STATUS, status.toJSON().toString())
+        sendEnvelope(envelope, targetMacId)
     }
 
     suspend fun sendEnvelopeOrdered(envelope: NacMacEnvelope, targetMacId: String? = null) {

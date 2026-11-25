@@ -21,6 +21,7 @@ public enum NacMacMessageType: String, Codable, Sendable {
     case fileEnd = "FILE_END"
     case fileCancel = "FILE_CANCEL"
     case fileAck = "FILE_ACK"
+    case deviceStatus = "DEVICE_STATUS"
     case error = "ERROR"
 }
 
@@ -414,6 +415,47 @@ public struct SMSSendStatusPayload: Codable, Sendable {
         self.success = success
         self.message = message
         self.threadId = threadId
+    }
+}
+
+// MARK: - Device Telemetry / Battery Status Payload
+public struct DeviceStatusPayload: Codable, Equatable, Sendable {
+    public let deviceId: String?
+    public let deviceName: String?
+    public let batteryLevel: Int
+    public let isCharging: Bool
+    public let chargingSource: String?
+    public let timestamp: Int64
+    
+    public init(
+        deviceId: String? = nil,
+        deviceName: String? = nil,
+        batteryLevel: Int,
+        isCharging: Bool,
+        chargingSource: String? = nil,
+        timestamp: Int64 = Int64(Date().timeIntervalSince1970)
+    ) {
+        self.deviceId = deviceId
+        self.deviceName = deviceName
+        self.batteryLevel = max(-1, min(100, batteryLevel))
+        self.isCharging = isCharging
+        self.chargingSource = chargingSource
+        self.timestamp = timestamp
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case deviceId, deviceName, batteryLevel, isCharging, chargingSource, timestamp
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.deviceId = try? container.decodeIfPresent(String.self, forKey: .deviceId)
+        self.deviceName = try? container.decodeIfPresent(String.self, forKey: .deviceName)
+        let rawLevel = try container.decode(Int.self, forKey: .batteryLevel)
+        self.batteryLevel = max(-1, min(100, rawLevel))
+        self.isCharging = (try? container.decodeIfPresent(Bool.self, forKey: .isCharging)) ?? false
+        self.chargingSource = try? container.decodeIfPresent(String.self, forKey: .chargingSource)
+        self.timestamp = (try? container.decodeIfPresent(Int64.self, forKey: .timestamp)) ?? Int64(Date().timeIntervalSince1970)
     }
 }
 

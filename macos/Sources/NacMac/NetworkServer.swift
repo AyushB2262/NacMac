@@ -7,12 +7,26 @@ public struct ConnectedDeviceInfo: Equatable, Sendable, Identifiable {
     public let deviceName: String
     public let ip: String
     public let connectedAt: Date
+    public let batteryLevel: Int?
+    public let isCharging: Bool?
+    public let chargingSource: String?
     
-    public init(deviceId: String, deviceName: String, ip: String, connectedAt: Date = Date()) {
+    public init(
+        deviceId: String,
+        deviceName: String,
+        ip: String,
+        connectedAt: Date = Date(),
+        batteryLevel: Int? = nil,
+        isCharging: Bool? = nil,
+        chargingSource: String? = nil
+    ) {
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.ip = ip
         self.connectedAt = connectedAt
+        self.batteryLevel = batteryLevel
+        self.isCharging = isCharging
+        self.chargingSource = chargingSource
     }
 }
 
@@ -39,6 +53,7 @@ public final class NetworkServer: @unchecked Sendable {
     private var connectionDevices: [ObjectIdentifier: String] = [:]
     private var deviceNames: [String: String] = [:]
     private var deviceEndpoints: [String: String] = [:]
+    private var deviceStatuses: [String: DeviceStatusPayload] = [:]
     private var authenticatedDevices = Set<String>()
     private var pendingConnections: [ObjectIdentifier: NWConnection] = [:]
     
@@ -71,6 +86,7 @@ public final class NetworkServer: @unchecked Sendable {
             self.authenticatedDevices.removeAll()
             self.deviceNames.removeAll()
             self.deviceEndpoints.removeAll()
+            self.deviceStatuses.removeAll()
             for (_, conn) in self.pendingConnections {
                 conn.cancel()
             }
@@ -93,6 +109,7 @@ public final class NetworkServer: @unchecked Sendable {
                     self.authenticatedDevices.remove(targetId)
                     self.deviceNames.removeValue(forKey: targetId)
                     self.deviceEndpoints.removeValue(forKey: targetId)
+                    self.deviceStatuses.removeValue(forKey: targetId)
                     conn.cancel()
                 }
             } else {
@@ -105,6 +122,7 @@ public final class NetworkServer: @unchecked Sendable {
                 self.authenticatedDevices.removeAll()
                 self.deviceNames.removeAll()
                 self.deviceEndpoints.removeAll()
+                self.deviceStatuses.removeAll()
                 for (_, conn) in self.pendingConnections {
                     conn.cancel()
                 }
@@ -117,10 +135,14 @@ public final class NetworkServer: @unchecked Sendable {
     public func getConnectedDevices() -> [ConnectedDeviceInfo] {
         queue.sync {
             return activeConnections.keys.map { id in
-                ConnectedDeviceInfo(
+                let status = deviceStatuses[id]
+                return ConnectedDeviceInfo(
                     deviceId: id,
                     deviceName: deviceNames[id] ?? "Android Device",
-                    ip: deviceEndpoints[id] ?? "Local Wi-Fi"
+                    ip: deviceEndpoints[id] ?? "Local Wi-Fi",
+                    batteryLevel: status?.batteryLevel,
+                    isCharging: status?.isCharging,
+                    chargingSource: status?.chargingSource
                 )
             }
         }
@@ -236,6 +258,7 @@ public final class NetworkServer: @unchecked Sendable {
                 authenticatedDevices.remove(deviceId)
                 deviceNames.removeValue(forKey: deviceId)
                 deviceEndpoints.removeValue(forKey: deviceId)
+                deviceStatuses.removeValue(forKey: deviceId)
                 print("[NacMac-Network] Device disconnected: \(deviceId). Standing by for auto-reconnect...")
             }
         }
@@ -447,7 +470,55 @@ public final class NetworkServer: @unchecked Sendable {
             }
             if let payloadData = envelope.payload.data(using: .utf8),
                let end = try? JSONDecoder().decode(FileEndPayload.self, from: payloadData) {
-                _ = FileTransferManager.shared.handleFileEnd(end)
+                let ok = FileTransferManager.shared.handleFileEnd(end)
+                let ack = FileAckPayload(
+                    transferId: end.transferId,
+                    success: ok,
+                    message: ok ? "Transfer verified" : "File verification failed"
+                )
+                if let ackData = try? JSONEncoder().encode(ack),
+                   let ackJson = String(data: ackData, encoding: .utf8) {
+                    sendEnvelopeToConnection(NacMacEnvelope(type: .fileAck, payload: ackJson), conn: conn)
+                }
+            }
+            
+        case .fileAck:
+            guard isAuth else { return }
+            if let payloadData = envelope.payload.data(using: .utf8),
+               let ack = try? JSONDecoder().decode(FileAckPayload.self, from: payloadData) {
+                print("[NacMac-File] Received FILE_ACK for \(ack.transferId): success=\(ack.success) (\(ack.message))")
+                Task { @MainActor in
+                    DashboardState.shared.addLog("Transfer ack (\(ack.success ? "verified" : "failed")): \(ack.message)", type: ack.success ? "success" : "warning")
+                }
+            }
+            
+        case .deviceStatus:
+            guard isAuth, let devId = deviceId else {
+                print("[NacMac-Security] Blocked unauthorized .deviceStatus")
+                return
+            }
+            if let payloadData = envelope.payload.data(using: .utf8),
+               let status = try? JSONDecoder().decode(DeviceStatusPayload.self, from: payloadData) {
+                let effectiveName = status.deviceName ?? deviceNames[devId] ?? "Android Device"
+                let normalized = DeviceStatusPayload(
+                    deviceId: devId,
+                    deviceName: effectiveName,
+                    batteryLevel: status.batteryLevel,
+                    isCharging: status.isCharging,
+                    chargingSource: status.chargingSource,
+                    timestamp: status.timestamp
+                )
+                deviceStatuses[devId] = normalized
+                refreshConnectionState()
+                NotificationManager.shared.checkAndNotifyLowBattery(
+                    deviceId: devId,
+                    deviceName: effectiveName,
+                    batteryLevel: normalized.batteryLevel,
+                    isCharging: normalized.isCharging
+                )
+                Task { @MainActor in
+                    DashboardState.shared.handleDeviceStatus(normalized)
+                }
             }
             
         case .fileCancel:
@@ -609,10 +680,14 @@ public final class NetworkServer: @unchecked Sendable {
     
     private func refreshConnectionState() {
         let devices = activeConnections.keys.map { id in
-            ConnectedDeviceInfo(
+            let status = deviceStatuses[id]
+            return ConnectedDeviceInfo(
                 deviceId: id,
                 deviceName: deviceNames[id] ?? "Android Device",
-                ip: deviceEndpoints[id] ?? "Local Wi-Fi"
+                ip: deviceEndpoints[id] ?? "Local Wi-Fi",
+                batteryLevel: status?.batteryLevel,
+                isCharging: status?.isCharging,
+                chargingSource: status?.chargingSource
             )
         }
         

@@ -72,8 +72,12 @@ cat << 'EOF' > "$CONTENTS/Info.plist"
 </plist>
 EOF
 
-echo "[*] Code-signing NacMac.app bundle..."
-codesign --force --deep --sign - "$APP_DIR"
+echo "[*] Code-signing NacMac.app bundle (Hardened Runtime)..."
+if [ -f "$DIR/NacMac.entitlements" ]; then
+    codesign --force --deep --options runtime --entitlements "$DIR/NacMac.entitlements" --sign - "$APP_DIR"
+else
+    codesign --force --deep --options runtime --sign - "$APP_DIR"
+fi
 
 if [ -x "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" ]; then
     /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DIR"

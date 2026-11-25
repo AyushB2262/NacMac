@@ -114,4 +114,38 @@ class ProtocolTest {
         assertEquals(52840, decoded.port)
         assertEquals("SECRET123", decoded.secret)
     }
+
+    @Test
+    fun testDeviceStatusAndFileAckPayloads() {
+        val status = DeviceStatusPayload(
+            deviceId = "pixel-9",
+            deviceName = "Google Pixel 9",
+            batteryLevel = 84,
+            isCharging = true,
+            chargingSource = "USB",
+            timestamp = 1732500000L
+        )
+        val statusJson = status.toJSON().toString()
+        val decodedStatus = DeviceStatusPayload.fromJSON(statusJson)
+
+        assertNotNull(decodedStatus)
+        assertEquals("pixel-9", decodedStatus!!.deviceId)
+        assertEquals("Google Pixel 9", decodedStatus.deviceName)
+        assertEquals(84, decodedStatus.batteryLevel)
+        assertTrue(decodedStatus.isCharging)
+        assertEquals("USB", decodedStatus.chargingSource)
+
+        // Verify clamping bounds for malformed battery levels
+        val clamped = DeviceStatusPayload.fromJSON("""{"batteryLevel":142,"isCharging":false}""")
+        assertNotNull(clamped)
+        assertEquals(100, clamped!!.batteryLevel)
+        assertFalse(clamped.isCharging)
+
+        val ack = FileAckPayload(transferId = "tx-123", success = true, message = "Transfer verified")
+        val decodedAck = FileAckPayload.fromJSON(ack.toJSON().toString())
+        assertNotNull(decodedAck)
+        assertEquals("tx-123", decodedAck!!.transferId)
+        assertTrue(decodedAck.success)
+        assertEquals("Transfer verified", decodedAck.message)
+    }
 }

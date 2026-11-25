@@ -161,7 +161,9 @@ def run_tests():
     try:
 
         # Launch binary as background process for test
-        proc = subprocess.Popen([bin_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        daemon_env = os.environ.copy()
+        daemon_env["NACMAC_HEADLESS"] = "1"
+        proc = subprocess.Popen([bin_path, "--headless"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=daemon_env)
         print("[*] Started macOS server daemon (PID: %d)..." % proc.pid)
         
         # Wait specifically for the new active_qr.json to be written by the newly spawned daemon
@@ -273,12 +275,15 @@ def run_tests():
             })
             offset += len(chunk)
 
-        # 4.3 Send FILE_END
+        # 4.3 Send FILE_END and verify FILE_ACK
         PacketFraming.send_envelope(s, "FILE_END", {
             "transferId": transfer_id,
             "totalBytes": len(file_bytes)
         })
-        time.sleep(1.0)
+        ack = PacketFraming.read_envelope(s)
+        assert ack is not None and ack["type"] == "FILE_ACK", f"Expected FILE_ACK, got {ack}"
+        ack_payload = json.loads(ack["payload"])
+        assert ack_payload["transferId"] == transfer_id and ack_payload["success"] is True, f"FILE_ACK failed: {ack_payload}"
 
         # Verify file arrived on Mac in ~/Downloads/NacMac
         dest_path = os.path.expanduser(f"~/Downloads/NacMac/{test_filename}")

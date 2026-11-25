@@ -44,9 +44,9 @@ NacMac solves this by providing a 100% local, peer-to-peer, native continuity br
 - Debounce Filter: 300 ms debounce window prevents duplicate socket broadcasts and infinite feedback loops.
 - Cross-Platform Sync: Text copied on macOS becomes immediately available for pasting on Android, and vice versa.
 
-### D. Multi-Device Management & SMS Hub
+### D. Multi-Device Management, Battery Telemetry & SMS Hub
 - Multi-Device Pairing: A single macOS workstation can maintain simultaneous persistent connections with multiple Android phones.
-- Device Store: Tracks device status, battery levels, connection metrics, and directional transfer statistics.
+- Live Device Telemetry: Android streams `DEVICE_STATUS` updates (battery percentage, charging state, power source) to the macOS Dashboard and Menu Bar, with low-battery alerts at `<= 15%`.
 - Desktop SMS Interface: Allows querying message threads and sending outbound SMS directly from macOS through the Android radio.
 
 ---
@@ -63,7 +63,7 @@ NacMac solves this by providing a 100% local, peer-to-peer, native continuity br
 |   |  * NsdManager mDNS    | <---> |  * Bonjour Daemon   |   |
 |   |  * TCP Client         |       |  * NWListener :52840|   |
 |   |  * Foreground Service |       |  * Menu Bar Hub     |   |
-|   |  * Jetpack Compose    |       |  * SwiftUI Dashboard|   |
+|   |  * Material 3 UI      |       |  * SwiftUI Dashboard|   |
 |   +-----------------------+       +---------------------+   |
 +-------------------------------------------------------------+
 ```
@@ -168,6 +168,24 @@ Syncs notification dismissal from macOS back to Android.
 }
 ```
 
+#### 10. DEVICE_STATUS
+Streams live Android battery level and charging telemetry to macOS.
+```json
+{
+  "type": "DEVICE_STATUS",
+  "payload": "{\"deviceId\":\"uuid-v4\",\"deviceName\":\"Pixel 8 Pro\",\"batteryLevel\":84,\"isCharging\":true,\"chargingSource\":\"USB\",\"timestamp\":1732500000}"
+}
+```
+
+#### 11. FILE_ACK
+Confirms byte-size and SHA-256 verification status after `FILE_END`.
+```json
+{
+  "type": "FILE_ACK",
+  "payload": "{\"transferId\":\"transfer-uuid\",\"success\":true,\"message\":\"Transfer verified\"}"
+}
+```
+
 ---
 
 ## 4. Competitive Differentiation Matrix
@@ -191,9 +209,9 @@ Syncs notification dismissal from macOS back to Android.
 ## 5. Security & Privacy Model
 
 1. Zero Phoning Home: NacMac contains no analytics SDKs, telemetry probes, or third-party trackers.
-2. Local Subnet Boundary: Network sockets bind strictly to local network interfaces (`en0`, `wlan0`). Incoming packets without validated authentication secrets are dropped immediately.
-3. Secure Key Storage: Pairing credentials are saved using private local app storage (`allowBackup="false"` on Android) and sandboxed local defaults on macOS.
-4. Stream Hygiene: File streams are verified byte-for-byte against SHA-256 digests. If any byte is altered in transit, the transfer fails and the file is deleted immediately.
+2. Direct Local Wi-Fi Transport: Communication travels directly over local Wi-Fi (port 52840 + mDNS). Unauthenticated connections are dropped after 5 seconds and capped at 64 KB frames.
+3. Hardened Runtime & Local Storage: macOS app bundles are signed with Hardened Runtime (`NacMac.entitlements`), and pairing credentials are stored locally (`allowBackup="false"` on Android, `~/.nacmac/paired_devices.json` on macOS) with 10-minute rotating QR pairing secrets.
+4. Stream Hygiene: File streams are bounded to declared sizes and verified byte-for-byte against SHA-256 digests. If any byte is altered in transit, the transfer fails and the temporary `.part` file is deleted immediately.
 
 ---
 

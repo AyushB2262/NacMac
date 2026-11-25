@@ -29,6 +29,7 @@ import androidx.lifecycle.lifecycleScope
 import com.nactore.nacmac.R
 import com.nactore.nacmac.data.DeviceStore
 import com.nactore.nacmac.data.PairedMac
+import com.nactore.nacmac.model.ClipboardSyncPayload
 import com.nactore.nacmac.model.NacMacEnvelope
 import com.nactore.nacmac.model.NacMacMessageType
 import com.nactore.nacmac.model.NotificationPayload
@@ -105,7 +106,7 @@ class MainActivity : AppCompatActivity() {
             if (rawJson != null) {
                 val payload = PairingQRPayload.fromJSON(rawJson)
                 if (payload != null) {
-                    val primaryIp = payload.ips.firstOrNull { it != "127.0.0.1" } ?: payload.ips.firstOrNull() ?: "127.0.0.1"
+                    val primaryIp = pickBestIp(payload.ips)
                     deviceStore.savePairedMac(
                         PairedMac(
                             macId = payload.macId,
@@ -790,7 +791,7 @@ class MainActivity : AppCompatActivity() {
                         badgeConnected.text = "✔ Connected & Online"
                         badgeConnected.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFDCFCE7.toInt())
                         badgeConnected.setTextColor(0xFF15803D.toInt())
-                        txtDevicePath.text = "Local ID: ~/.nacmac/paired_device.json (${status.ip})"
+                        txtDevicePath.text = "${status.ip}:52840 • Direct Wi-Fi"
                         btnDisconnect.visibility = View.VISIBLE
                     }
                     is ConnectionStatus.Connecting -> {
@@ -810,7 +811,7 @@ class MainActivity : AppCompatActivity() {
                             badgeConnected.text = "Standby"
                             badgeConnected.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFF1F5F9.toInt())
                             badgeConnected.setTextColor(0xFF64748B.toInt())
-                            txtDevicePath.text = "Local ID: ~/.nacmac/paired_device.json"
+                            txtDevicePath.text = "Auto-reconnect ready • mDNS / Bonjour"
                             btnDisconnect.visibility = View.VISIBLE
                         } else {
                             updateDisconnectedUI()
@@ -1020,7 +1021,7 @@ class MainActivity : AppCompatActivity() {
                 val text = input.text.toString().trim()
                 val payload = PairingQRPayload.fromJSON(text)
                 if (payload != null) {
-                    val primaryIp = payload.ips.firstOrNull { it != "127.0.0.1" } ?: payload.ips.firstOrNull() ?: "127.0.0.1"
+                    val primaryIp = pickBestIp(payload.ips)
                     deviceStore.savePairedMac(
                         PairedMac(
                             macId = payload.macId,
@@ -1041,6 +1042,13 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun pickBestIp(ips: List<String>): String {
+        return ips.firstOrNull { it != "127.0.0.1" && it != "10.0.2.2" }
+            ?: ips.firstOrNull { it != "127.0.0.1" }
+            ?: ips.firstOrNull()
+            ?: "127.0.0.1"
+    }
+
     private fun handleIncomingShareIntent(intent: Intent?) {
         if (intent == null) return
         
@@ -1051,9 +1059,39 @@ class MainActivity : AppCompatActivity() {
                 @Suppress("DEPRECATION")
                 intent.getParcelableExtra(Intent.EXTRA_STREAM)
             }
-            uri?.let {
-                connectionManager.fileTransferWorker?.sendFileToMac(it)
+            if (uri != null) {
+                connectionManager.fileTransferWorker?.sendFileToMac(uri)
                 Toast.makeText(this, "Sending shared file to Mac...", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+            if (!sharedText.isNullOrBlank()) {
+                val hash = NacMacAccessibilityService.computeSha256(sharedText)
+                NacMacAccessibilityService.recordSyncedHash(sharedText)
+                val clipPayload = ClipboardSyncPayload(
+                    text = sharedText,
+                    timestamp = System.currentTimeMillis(),
+                    sourceDeviceId = deviceStore.androidId,
+                    hash = hash
+                )
+                connectionManager.sendEnvelope(
+                    NacMacEnvelope(NacMacMessageType.CLIPBOARD_SYNC, clipPayload.toJSON().toString())
+                )
+                Toast.makeText(this, "Shared text copied to Mac clipboard", Toast.LENGTH_SHORT).show()
+            }
+        } else if (Intent.ACTION_SEND_MULTIPLE == intent.action) {
+            val uris: ArrayList<Uri>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+            }
+            if (!uris.isNullOrEmpty()) {
+                for (u in uris) {
+                    connectionManager.fileTransferWorker?.sendFileToMac(u)
+                }
+                Toast.makeText(this, "Sending ${uris.size} files to Mac...", Toast.LENGTH_SHORT).show()
             }
         }
     }

@@ -104,7 +104,14 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
         let devices = NetworkServer.shared.getConnectedDevices()
         if !devices.isEmpty {
             for dev in devices {
-                let devItem = NSMenuItem(title: "  • \(dev.deviceName) - Online", action: nil, keyEquivalent: "")
+                let batteryText: String
+                if let level = dev.batteryLevel, level >= 0 {
+                    let chargeSuffix = (dev.isCharging == true) ? " ⚡" : ""
+                    batteryText = " (\(level)%\(chargeSuffix))"
+                } else {
+                    batteryText = ""
+                }
+                let devItem = NSMenuItem(title: "  • \(dev.deviceName) - Online\(batteryText)", action: nil, keyEquivalent: "")
                 devItem.isEnabled = false
                 menu.addItem(devItem)
             }
@@ -150,14 +157,13 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
     }
     
     @objc func showPairingWindow() {
-        if let existing = qrWindow {
-            existing.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        
         let qrJson = PairingManager.shared.generateQRJSONString()
         guard let qrImage = PairingManager.shared.generateQRImage(from: qrJson) else { return }
+        
+        if let existing = qrWindow {
+            existing.close()
+            qrWindow = nil
+        }
         
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 340, height: 420),
@@ -297,17 +303,22 @@ public final class MenuBarController: NSObject, NSMenuDelegate, NetworkServerDel
                 CompletedTransfer(name: filename, sizeString: "Verified", direction: dir, filePath: path),
                 at: 0
             )
+            if DashboardState.shared.completedTransfers.count > 100 {
+                DashboardState.shared.completedTransfers.removeLast(DashboardState.shared.completedTransfers.count - 100)
+            }
         }
     }
     
     nonisolated public func transferDidCancel(transferId: String, reason: String) {
         Task { @MainActor in
+            DashboardState.shared.activeTransfer = nil
             self.transferMenuItem.title = "✕ Transfer cancelled: \(reason)"
         }
     }
     
     nonisolated public func transferDidFail(transferId: String, error: String) {
         Task { @MainActor in
+            DashboardState.shared.activeTransfer = nil
             self.transferMenuItem.title = "⚠ Transfer failed: \(error)"
         }
     }

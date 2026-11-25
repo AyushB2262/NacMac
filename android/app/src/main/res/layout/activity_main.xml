@@ -728,7 +728,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
-                android:text="Local Peer-to-Peer Encryption with SHA-256"
+                android:text="100% Local Wi-Fi • Integrity Verified with SHA-256"
                 android:textColor="@color/text_secondary"
                 android:textSize="11sp" />
         </LinearLayout>

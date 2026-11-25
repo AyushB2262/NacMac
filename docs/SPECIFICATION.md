@@ -48,7 +48,12 @@ flowchart LR
 ### C. Real-Time Notification Mirroring
 - **Notification Interception:** Android's `NacMacNotificationListener` intercepts system and third-party notifications (including `Notification.MessagingStyle`, `BigText`, and `InboxStyle`), packages the title, body text, timestamp, and compressed 96×96 app icon, and streams them to macOS.
 - **Native macOS Banners:** Forwarded notifications are dispatched via `UNUserNotificationCenter` as native macOS system notification banners and recorded in the macOS Dashboard.
-- **Bidirectional Dismissal:** Dismissing a mirrored notification on macOS forwards a `NOTIFICATION_DISMISSED` envelope to Android to sync state.
+- **Bidirectional Dismissal & Inline Replies:** Dismissing a mirrored notification on macOS forwards a `NOTIFICATION_DISMISSED` envelope to Android; clicking action buttons or typing an inline reply dispatches `NOTIFICATION_ACTION` back to Android's `RemoteInput`.
+
+### D. Universal Clipboard, SMS Hub & Live Device Telemetry
+- **Universal Clipboard Sync:** Debounced SHA-256 hash-verified clipboard synchronization across Mac and connected Android devices, automatically filtering concealed and password-manager pasteboard types.
+- **SMS / RCS Messaging Hub:** Desktop conversation list, thread message history, and outbound SMS dispatch routed via the paired Android phone.
+- **Live Battery & Charging Telemetry:** Android broadcasts `DEVICE_STATUS` updates whenever battery level or power source changes, rendering live battery badges in the macOS Dashboard and Menu Bar with low-battery alerts at `<= 15%`.
 
 ---
 
@@ -82,5 +87,6 @@ All communication travels over framed TCP packets consisting of a 4-byte big-end
 | `FILE_CHUNK` | Binary chunk payload (`transferId`, `offset`, `length`, `dataBase64`). |
 | `FILE_END` | Transfer finalization marker triggering SHA-256 verification. |
 | `FILE_CANCEL` | Mid-stream cancellation trigger for immediate `.part` cleanup. |
-| `FILE_ACK` | Positive receipt confirmation for transfer coordination. |
+| `FILE_ACK` | Positive or error receipt confirmation sent after `FILE_END` verification (`transferId`, `success`, `message`). |
+| `DEVICE_STATUS` | Live Android battery and power telemetry (`deviceId`, `deviceName`, `batteryLevel`, `isCharging`, `chargingSource`, `timestamp`). |
 | `ERROR` | Diagnostic error and exception messaging. |

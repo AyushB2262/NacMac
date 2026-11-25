@@ -91,18 +91,26 @@ public final class ClipboardSyncManager: @unchecked Sendable {
     
     public func handleIncoming(_ payloadString: String) {
         guard let data = payloadString.data(using: .utf8),
-              let payload = try? JSONDecoder().decode(ClipboardSyncPayload.self, from: data) else {
-            print("[NacMac-Clipboard] Failed to decode incoming CLIPBOARD_SYNC payload")
+              let payload = try? JSONDecoder().decode(ClipboardSyncPayload.self, from: data),
+              !payload.text.isEmpty else {
+            print("[NacMac-Clipboard] Failed to decode or empty incoming CLIPBOARD_SYNC payload")
             return
         }
         
+        let computedHash = computeSHA256(payload.text)
+        if !payload.hash.isEmpty && payload.hash.lowercased() != computedHash.lowercased() {
+            print("[NacMac-Clipboard] Rejected clipboard payload due to SHA-256 hash mismatch")
+            return
+        }
+        let effectiveHash = payload.hash.isEmpty ? computedHash : payload.hash.lowercased()
+        
         lock.lock()
-        if payload.hash == lastSyncedHash {
+        if effectiveHash == lastSyncedHash {
             lock.unlock()
             // Loop prevention: already synced this exact content
             return
         }
-        lastSyncedHash = payload.hash
+        lastSyncedHash = effectiveHash
         lock.unlock()
         
         // Broadcast clipboard update to all other connected devices (excluding the sender)
@@ -117,7 +125,7 @@ public final class ClipboardSyncManager: @unchecked Sendable {
             print("[NacMac-Clipboard] Wrote remote clipboard from \(payload.sourceDeviceId) to Mac pasteboard (\(payload.text.count) chars)")
             
             let snippet = payload.text.count > 30 ? "\(payload.text.prefix(30))..." : payload.text
-            MainActor.assumeIsolated {
+            Task { @MainActor in
                 DashboardState.shared.addLog("Universal Clipboard: copied \"\(snippet)\" from device", type: "success")
             }
         }

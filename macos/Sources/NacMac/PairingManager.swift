@@ -67,15 +67,36 @@ public final class PairingManager: @unchecked Sendable {
             }
         }
         freeifaddrs(ifaddr)
+        // Prioritize private LAN IPv4 addresses (192.168.x.x, 10.x.x.x, 172.16-31.x.x) ahead of virtual/link-local interfaces
+        addresses.sort { lhs, rhs in
+            ipPriority(lhs) < ipPriority(rhs)
+        }
         if !addresses.contains("10.0.2.2") {
             addresses.append("10.0.2.2") // Android Emulator AVD host bridge
         }
         return addresses.isEmpty ? ["127.0.0.1", "10.0.2.2"] : addresses
     }
+
+    private func ipPriority(_ ip: String) -> Int {
+        if ip.hasPrefix("192.168.") { return 0 }
+        if ip.hasPrefix("10.") && ip != "10.0.2.2" { return 1 }
+        let parts = ip.split(separator: ".").compactMap { Int($0) }
+        if parts.count == 4 && parts[0] == 172 && (16...31).contains(parts[1]) {
+            return 2
+        }
+        if ip.hasPrefix("169.254.") { return 4 }
+        return 3
+    }
     
     public func generateQRPayload() -> PairingQRPayload {
         lock.lock()
         defer { lock.unlock() }
+        
+        // Auto-rotate expired ephemeral pairing secret so QR codes shown after 10+ minutes remain valid
+        if Date().timeIntervalSince(activeSecretCreatedAt) > 600 {
+            self.activeSecret = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            self.activeSecretCreatedAt = Date()
+        }
         
         let ips = getLocalIPAddresses()
         let payload = PairingQRPayload(

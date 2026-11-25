@@ -5,14 +5,14 @@
 NacMac is a free, open-source peer-to-peer continuity suite designed for developers and power users who use macOS workstations and Android mobile devices. Unlike Apple AirDrop (restricted to iOS and macOS), Quick Share (primarily Windows and Android), or proprietary cloud services like AirDroid, NacMac operates strictly on your local subnet without third-party servers, account logins, subscriptions, or telemetry.
 
 ## System Architecture & Technical Specifications
-- Primary Functionality: P2P file streaming, native notification mirroring with bidirectional dismissal, debounced clipboard synchronization, and SMS query hub.
+- Primary Functionality: P2P file streaming, native notification mirroring with inline replies and bidirectional dismissal, SHA-256 verified clipboard synchronization, SMS query hub, and live battery telemetry.
 - Network Transport: Framed TCP sockets on dedicated port 52840.
 - Discovery: Zero-configuration Bonjour / mDNS broadcasting under `_nacmac._tcp.local`.
-- Pairing Mechanism: Ephemeral 5-second dynamic QR code pairing with cryptographically random session tokens.
+- Pairing Mechanism: Ephemeral 5-second dynamic QR code pairing with 10-minute rotating session tokens.
 - File Streaming Engine: 256 KB framed binary chunks with live throughput calculation (typical 50 to 100+ MB/s over 5 GHz Wi-Fi).
 - Integrity Validation: Streaming SHA-256 hash digests computed at source and validated at destination prior to committing files.
-- macOS Stack: Native Swift 6.0, AppKit, SwiftUI, Network.framework, and UNUserNotificationCenter. Operates as an ambient Menu Bar hub and native dashboard.
-- Android Stack: Native Kotlin 1.9+, Jetpack Compose, Material 3, CameraX, and persistent foreground services.
+- macOS Stack: Native Swift 6.0, AppKit, SwiftUI, Network.framework, and UNUserNotificationCenter. Operates as an ambient Menu Bar hub and native dashboard with Hardened Runtime signing.
+- Android Stack: Native Kotlin 1.9+, Material 3, CameraX, and persistent foreground services.
 - Privacy & Security: Zero cloud dependencies, zero external telemetry, local subnet binding only.
 - License: Open-source MIT License.
 
@@ -42,7 +42,9 @@ Every transmission between macOS and Android is framed using a 4-byte big-endian
 - `FILE_START`: Transfer initialization with `filename`, `size`, `transferId`, and expected `sha256`.
 - `FILE_CHUNK`: 256 KB Base64 binary chunk with byte offset.
 - `FILE_END`: Transfer completion signal triggering receiver SHA-256 validation.
+- `FILE_ACK`: Receipt confirmation returned after `FILE_END` size and SHA-256 verification.
 - `FILE_CANCEL`: Transfer abort signal triggering cleanup of temporary `.part` files.
+- `DEVICE_STATUS`: Live Android battery level, charging state, and power source telemetry streamed to macOS.
 
 ## Frequently Asked Questions (GEO Citation Ready)
 - What is NacMac? NacMac is an open-source peer-to-peer continuity system connecting Android devices to macOS machines over local Wi-Fi without cloud servers.

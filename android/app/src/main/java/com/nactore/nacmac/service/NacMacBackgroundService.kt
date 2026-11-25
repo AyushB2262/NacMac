@@ -1,8 +1,10 @@
 package com.nactore.nacmac.service
 
 import android.app.*
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -31,6 +33,12 @@ class NacMacBackgroundService : Service() {
         }
     }
 
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            connectionManager.sendDeviceStatus()
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -46,6 +54,13 @@ class NacMacBackgroundService : Service() {
             .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
             .build()
         connectivityManager.registerNetworkCallback(request, networkCallback)
+
+        val batteryFilter = IntentFilter().apply {
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
+        }
+        registerReceiver(batteryReceiver, batteryFilter)
 
         // Observe connection status to update persistent notification
         scope.launch {
@@ -106,6 +121,9 @@ class NacMacBackgroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(batteryReceiver)
+        } catch (_: Exception) {}
         connectivityManager.unregisterNetworkCallback(networkCallback)
         scope.cancel()
     }

@@ -7,9 +7,14 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
     
     private let cacheDir: URL
     private var registeredCategories = Set<UNNotificationCategory>()
+    private var lowBatteryAlertedDevices = Set<String>()
     private let lock = NSLock()
+    private var isHeadless: Bool {
+        return CommandLine.arguments.contains("--headless")
+            || ProcessInfo.processInfo.environment["NACMAC_HEADLESS"] == "1"
+    }
     private var hasBundle: Bool {
-        return Bundle.main.bundleIdentifier != nil
+        return !isHeadless && Bundle.main.bundleIdentifier != nil
     }
     
     override private init() {
@@ -147,8 +152,10 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         }
         
         guard hasBundle else {
-            let fallbackTitle = originTag != nil ? "\(displayTitle) (\(originTag!))" : displayTitle
-            fallbackDisplay(title: fallbackTitle, body: bodyText, filePath: payload.filePath)
+            if !isHeadless {
+                let fallbackTitle = originTag != nil ? "\(displayTitle) (\(originTag!))" : displayTitle
+                fallbackDisplay(title: fallbackTitle, body: bodyText, filePath: payload.filePath)
+            }
             print("[NacMac-Notification] Delivered native banner for: \(appName) - \(titleText)")
             return
         }
@@ -269,6 +276,32 @@ public final class NotificationManager: NSObject, @unchecked Sendable, UNUserNot
         print("[NacMac-Notification] Dismissed notification id: \(id)")
     }
     
+    public func checkAndNotifyLowBattery(deviceId: String, deviceName: String, batteryLevel: Int, isCharging: Bool) {
+        guard batteryLevel >= 0 else { return }
+        lock.lock()
+        if isCharging || batteryLevel >= 20 {
+            lowBatteryAlertedDevices.remove(deviceId)
+            lock.unlock()
+            return
+        }
+        if batteryLevel <= 15 && !lowBatteryAlertedDevices.contains(deviceId) {
+            lowBatteryAlertedDevices.insert(deviceId)
+            lock.unlock()
+            let notif = NotificationPayload(
+                id: "low_battery_\(deviceId)",
+                packageName: "com.nactore.nacmac.battery",
+                appName: "NacMac",
+                title: "Low Phone Battery (\(batteryLevel)%)",
+                body: "\(deviceName) is down to \(batteryLevel)%. Plug in a charger soon.",
+                deviceId: deviceId,
+                deviceName: deviceName
+            )
+            deliverNotification(notif)
+        } else {
+            lock.unlock()
+        }
+    }
+
     public func fallbackDisplay(title: String, body: String, filePath: String? = nil) {
         DispatchQueue.global(qos: .userInitiated).async {
             // Safe execution via argv arguments: never parse title or body as AppleScript source

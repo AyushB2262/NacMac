@@ -25,11 +25,11 @@ jobs:
       - name: Run Phase 2 & Continuity Integration Tests
         run: |
           cd macos && ./package_app.sh
+          codesign -dvvv NacMac.app
           cd ..
-          python3 tests/test_phase2_multi_device.py
-          killall -9 NacMac 2>/dev/null || true
-          sleep 2
-          python3 tests/test_e2e_continuity.py
+          python3 -u tests/test_phase2_multi_device.py
+          sleep 1
+          python3 -u tests/test_e2e_continuity.py
 
   android-build-and-test:
     name: Android Build & Unit Tests

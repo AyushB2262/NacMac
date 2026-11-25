@@ -104,10 +104,14 @@ Built with Android Material 3 and modern dark slate styling, offering single-tap
 - [x] **High-Speed P2P File Transfers:** Stream files of any size over your local Wi-Fi. Files are chunked into 256 KB binary payloads with live speed metrics (MB/s), visual progress, and cancellation support.
 - [x] **Cryptographic SHA-256 Verification:** Source computes the SHA-256 digest during transmission; receiver validates the hash upon completion to guarantee zero corrupted bytes.
 - [x] **Real-Time Notification Mirroring:** Intercepts notifications on Android (including `MessagingStyle`, `BigTextStyle`, and app icons) and renders them as native macOS system notification banners.
+- [x] **Interactive Notification Actions & Inline Replies:** Trigger Android notification buttons and reply directly from native macOS notification banners.
 - [x] **Bidirectional Dismissal:** Dismissing a mirrored notification on macOS syncs back to Android immediately.
 - [x] **Zero-Config mDNS Discovery:** macOS broadcasts an mDNS service (`_nacmac._tcp.local`) on port 52840. The Android companion automatically discovers and pairs without typing IP addresses.
 - [x] **Background Auto-Reconnection:** Android's low-power foreground service automatically re-establishes connection whenever your phone wakes or re-joins your home network.
-- [x] **Universal Clipboard Sync:** Automatically synchronizes clipboard text between Mac and Android with debounced change listeners.
+- [x] **Universal Clipboard Sync:** Automatically synchronizes clipboard text between Mac and Android with SHA-256 loop prevention and password-manager filtering.
+- [x] **SMS / RCS Messaging Hub:** Browse Android SMS conversations, read message history, and send replies directly from the macOS Dashboard.
+- [x] **Live Battery & Charging Telemetry:** View live phone battery percentage and charging status in the macOS Dashboard and Menu Bar, with low-battery alerts at `<= 15%`.
+- [x] **Multi-Device Continuity (N:1 & 1:N):** Pair and manage multiple Android devices simultaneously from one Mac workstation.
 - [x] **Strictly Local & Offline:** No internet connection required. Operates seamlessly on local home Wi-Fi, office networks, or mobile Wi-Fi hotspots.
 - [x] **Adaptive Dark and Light Interface:** High-contrast design system featuring Deep Slate (`#0F172A`), Ice White (`#F8FAFC`), and warm Amber accents (`#F97316`).
 
@@ -126,7 +130,7 @@ Until now, the only choices have been sluggish Bluetooth transfers, proprietary 
 1. **100% Local-First:** No accounts, no subscriptions, no cloud relays, no tracking. Communication stays strictly on your local Wi-Fi via high-throughput TCP sockets (`port 52840`).
 2. **Zero-Configuration Discovery:** Pair once in five seconds with an ephemeral dynamic QR code. After that, Bonjour / mDNS (`_nacmac._tcp.local`) silently re-establishes connections whenever you sit down at your desk.
 3. **High-Throughput Streaming:** 256 KB framed chunked streaming with live speed calculation, mid-stream cancellation, and cryptographic SHA-256 integrity verification.
-4. **Native Ergonomics:** Crafted native from the ground up: Swift 6, AppKit, and SwiftUI on macOS; Kotlin, Jetpack Compose, and Material 3 on Android. No Electron, no browser engines, no memory bloat.
+4. **Native Ergonomics:** Crafted native from the ground up: Swift 6, AppKit, and SwiftUI on macOS; Kotlin and Material 3 on Android. No Electron, no browser engines, no memory bloat.
 
 ---
 
@@ -194,9 +198,14 @@ Every transmission is framed with a 4-byte big-endian unsigned length prefix, fo
 | `FILE_START` | Initializes transfer with filename, file size, transfer ID, and expected SHA-256. |
 | `FILE_CHUNK` | Streams 256 KB binary chunks Base64-encoded with byte offsets. |
 | `FILE_END` | Signals stream completion; triggers recipient SHA-256 integrity validation. |
+| `FILE_ACK` | Confirms SHA-256 and byte-size transfer completion back to sender. |
 | `FILE_CANCEL` | Aborts active transfer and removes partial `.part` temporary files. |
-| `NOTIFICATION` | Streams Android notification payload with title, body, and compressed app icon. |
+| `NOTIFICATION` | Streams Android notification payload with title, body, actions, and compressed app icon. |
+| `NOTIFICATION_ACTION` | Dispatches action button clicks and inline replies from macOS to Android. |
 | `NOTIFICATION_DISMISSED` | Synchronizes notification dismissal from macOS back to Android. |
+| `CLIPBOARD_SYNC` | Synchronizes clipboard text across connected devices with SHA-256 deduplication. |
+| `SMS_*` | Queries conversations, thread messages, and dispatches outbound SMS via Android. |
+| `DEVICE_STATUS` | Streams live Android battery percentage and charging telemetry to macOS. |
 
 > For the comprehensive protocol specification, state machine diagrams, and packet structures, refer to **[docs/SPECIFICATION.md](docs/SPECIFICATION.md)**.
 
@@ -244,21 +253,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Testing & Verification
 
-NacMac includes a headless end-to-end integration and protocol verification test suite. It validates TCP handshake mechanics, Bonjour discovery, heartbeat keep-alive, chunked file transfer with SHA-256 hashing, and notification mirroring in an isolated sandbox without altering existing paired credentials:
+NacMac includes automated end-to-end protocol and multi-device integration test suites validating pairing handshake, heartbeat keepalive, notification mirroring and actions, universal clipboard sync, SMS hub payloads, chunked file transfer with SHA-256 verification and `FILE_ACK`, and `DEVICE_STATUS` battery telemetry:
 
 ```bash
+python3 tests/test_phase2_multi_device.py
 python3 tests/test_e2e_continuity.py
-```
-
-Expected output:
-```
-[PASS] Server port 52840 active & reachable
-[PASS] Bonjour mDNS publication detected (_nacmac._tcp)
-[PASS] Cryptographic QR pairing handshake verified
-[PASS] Heartbeat PING / PONG keepalive active
-[PASS] Notification packet dispatch & banner handling
-[PASS] Chunked 256KB file transfer & SHA-256 integrity match
-All 6 continuity test cases passed (100%).
 ```
 
 ---
@@ -269,7 +268,11 @@ NacMac follows native macOS application conventions:
 
 | Shortcut | Action |
 | :--- | :--- |
-| <kbd>⌘</kbd> + <kbd>O</kbd> | Open File Picker to send files to Android |
+| <kbd>⌘</kbd> + <kbd>D</kbd> | Open NacMac Dashboard |
+| <kbd>⌘</kbd> + <kbd>P</kbd> | Pair New Phone (Show QR) |
+| <kbd>⌘</kbd> + <kbd>S</kbd> | Send File to Phone |
+| <kbd>⌘</kbd> + <kbd>O</kbd> | Open Downloads Folder (`~/Downloads/NacMac`) |
+| <kbd>⌘</kbd> + <kbd>T</kbd> | Toggle Dark / Light Mode |
 | <kbd>⌘</kbd> + <kbd>,</kbd> | Open Settings |
 | <kbd>⌘</kbd> + <kbd>W</kbd> | Close Dashboard Window (app continues in Menu Bar) |
 | <kbd>⌘</kbd> + <kbd>Q</kbd> | Quit NacMac |
@@ -279,9 +282,9 @@ NacMac follows native macOS application conventions:
 ## Security & Privacy by Design
 
 - **Zero Phoning Home:** No telemetry, no crash reporting SDKs, no external network requests.
-- **Strictly LAN-Bound:** The TCP listener operates over local Wi-Fi (port 52840 + mDNS). It rejects incoming connections lacking matching dynamic authentication secrets.
-- **Private Local Storage:** Pairing keys and device records are stored in private app storage (`allowBackup="false"` on Android, local application sandbox on macOS) with dynamic rotation on pairing.
-- **Temporary File Hygiene:** Incomplete file streams are written to `.part` files and purged immediately if canceled or if hash validation fails.
+- **Direct Local Wi-Fi Transport:** The TCP listener operates on local Wi-Fi (port 52840 + mDNS), rejecting unauthenticated connections after a 5-second timeout and capping unauthenticated frames at 64 KB.
+- **Hardened Runtime & Private Storage:** macOS release bundles are signed with Hardened Runtime entitlements (`NacMac.entitlements`). Pairing keys are stored locally (`allowBackup="false"` on Android, `~/.nacmac/paired_devices.json` on macOS) using 10-minute rotating QR pairing secrets.
+- **Temporary File Hygiene:** Incomplete file streams are written to `.part` files, bounded to declared file size, and purged immediately if canceled or if SHA-256 validation fails.
 
 ---
 
@@ -324,7 +327,7 @@ Yes. NacMac is licensed under the permissive MIT License. Both the macOS applica
 ## Discovery & Topics
 
 For developers and contributors searching for continuity solutions:
-`airdrop-alternative` · `android-mac-continuity` · `p2p-file-transfer` · `notification-mirror` · `clipboard-sync` · `local-first` · `privacy-first` · `zeroconf` · `mdns` · `swiftui` · `jetpack-compose` · `kotlin` · `swift-6`
+`airdrop-alternative` · `android-mac-continuity` · `p2p-file-transfer` · `notification-mirror` · `clipboard-sync` · `local-first` · `privacy-first` · `zeroconf` · `mdns` · `swiftui` · `material-3` · `kotlin` · `swift-6`
 
 ---
 
